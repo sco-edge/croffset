@@ -638,6 +638,8 @@ static int parse_vxlan_identifier(struct parsing_context *pctx,
 	struct udphdr *udphdr;
 	struct iphdr *iphdr;
 
+    // Packing attribute is required.
+    // VXLAN header: 0800 0000 0090 04d0 b27e db87 ae86 1e95 9fce 5219 0800
 	struct vxlanhdr {
 	__be32	r1;
 	__be32	r2;
