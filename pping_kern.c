@@ -667,64 +667,8 @@ static int parse_vxlan_identifier(struct parsing_context *pctx,
 		return -1;
 	}
 
-	// const char fmt_str_vxlan1[] = "r1: %x, r2: %x, r3: %x";
-	// bpf_trace_printk(fmt_str_vxlan1, sizeof(fmt_str_vxlan1), h->r1, h->r2, h->r3);
-
-	// const char fmt_str_vxlan2[] = "r4: %x, r5: %x, r6: %x";
-	// bpf_trace_printk(fmt_str_vxlan2, sizeof(fmt_str_vxlan2), h->r4, h->r5, h->r6);
-
 	pctx->nh.pos = h + 1;
-	// const char fmt_str_pos[] = "h: %x, pctx->nh.pos: %x, diff: %d";
-	// bpf_trace_printk(fmt_str_pos, sizeof(fmt_str_pos), h, pctx->nh.pos, pctx->nh.pos - (void *)h);
-
 	proto = parse_iphdr(&pctx->nh, pctx->data_end, &iphdr);
-
-	// iphdr = pctx->nh.pos;
-	// int hdrsize;
-
-	// if (iphdr + 1 > pctx->data_end) {
-	// 	const char fmt_str1[] = "iphdr + 1: %d, pctx->data_end: %d";
-	// 	bpf_trace_printk(fmt_str1, sizeof(fmt_str1), iphdr + 1, pctx->data_end);
-	// 	return -1;
-	// }
-
-	// const char fmt_str_ip1[] = "ihl: %x, version: %x, tos: %x";
-	// bpf_trace_printk(fmt_str_ip1, sizeof(fmt_str_ip1), iphdr->ihl, iphdr->version, iphdr->tos);
-
-	// const char fmt_str_ip2[] = "tot_len: %x, id: %x, frag_off: %x";
-	// bpf_trace_printk(fmt_str_ip2, sizeof(fmt_str_ip2), iphdr->tot_len, iphdr->id, iphdr->frag_off);
-
-	// const char fmt_str_ip3[] = "ttl: %x, protocol: %x, check: %x";
-	// bpf_trace_printk(fmt_str_ip3, sizeof(fmt_str_ip3), iphdr->ttl, iphdr->protocol, iphdr->check);
-
-	// const char fmt_str_ip4[] = "saddr: %x, daddr: %x";
-	// bpf_trace_printk(fmt_str_ip4, sizeof(fmt_str_ip4), iphdr->saddr, iphdr->daddr);
-
-	// hdrsize = iphdr->ihl * 4;
-
-	// /* Variable-length IPv4 header, need to use byte-based arithmetic */
-	// if (pctx->nh.pos + hdrsize > pctx->data_end) {
-	// 	const char fmt_str2[] = "pctx->nh.pos: %d, hdrsize: %d, rightsize: %d";
-	// 	bpf_trace_printk(fmt_str2, sizeof(fmt_str2), pctx->nh.pos, hdrsize, pctx->data_end - pctx->nh.pos);
-	// 	return -1;
-	// }
-
-	// pctx->nh.pos += hdrsize;
-
-	// iphdr = pctx->nh.pos;
-	// int hdrsize;
-
-	
-	// const char fmt_str1[] = "iphdr: %d, pctx->data_end: %d";
-	// bpf_trace_printk(fmt_str1, sizeof(fmt_str1), iphdr, pctx->data_end);
-
-	// hdrsize = iphdr->ihl * 4;
-
-	// /* Variable-length IPv4 header, need to use byte-based arithmetic */
-	// if (nh->pos + hdrsize > data_end)
-	// 	return -1;
-	// const char fmt_str2[] = "pctx->nh.pos: %d, hdrsize: %d, pctx->data_end: %d";
-	// bpf_trace_printk(fmt_str2, sizeof(fmt_str2), iphdr, hdrsize, pctx->data_end);
 
 	if (proto != IPPROTO_TCP) {
 		const char fmt_str[] = "Failed at proto != IPPROTO_TCP. proto: %d";
