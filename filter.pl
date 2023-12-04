@@ -10,7 +10,9 @@ while (my $line = <$trace>) {
     $data{$fields[0]}++ if $fields[0] =~ /0x/;
 }
 
+
 while (($k,$v) = each %data) {
+    # print "$k, $v\n";
     if ($maxvalue <= $v) {
         $maxvalue = $v;
         $maxkey = $k;
