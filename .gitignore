@@ -1,3 +1,5 @@
 pping
+data/
 *.ll
 *.o
+*.csv
