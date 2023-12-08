@@ -53,7 +53,7 @@ done
 printf " done\n"
 
 echo
-kubectl logs -l app=iperf-server 
+kubectl logs --tail=20 -l app=iperf-server 
 echo
 
 echo "[Cleanup]"
