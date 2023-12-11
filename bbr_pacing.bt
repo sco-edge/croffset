@@ -1,0 +1,37 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+#include "bbr.h"
+
+BEGIN
+{
+	printf("sock,time_us,delivered,interval_us,is_app_limited\n");
+}
+
+kprobe:bbr_update_model
+{
+	$sock = (struct sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sock;
+	$bbr = $inet_csk->icsk_ca_priv;
+	$port = $sock->__sk_common.skc_num;
+	$rs = (struct rate_sample *)arg1;
+
+	$min_rtt_us = $bbr[0] & 0x00000000FFFFFFFF;
+	$mode = $bbr[7] & 0x0000000000000003;
+	$probe_rtt_round_done = ($bbr[7] & 0x0000000000000200) >> 9;
+	$probe_gain = ($bbr[9] & 0x000003FF00000000) >> 32;
+	$cwnd_gain = ($bbr[9] & 0x000FFC0000000000) >> 42;
+	$full_bw_reached = ($bbr[9] & 0x0010000000000000) >> 52;
+	$full_bw_cnt = ($bbr[9] & 0x0060000000000000) >> 53;
+	$cycle_idx = ($bbr[9] & 0x0380000000000000) >> 55;
+	$full_bw = ($bbr[10] & 0xFFFFFFFF00000000) >> 32;
+
+	if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
+		printf("0x%16llx,%lld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+			arg0, elapsed / 1000, $port, $min_rtt_us, $mode, $probe_rtt_round_done, $probe_gain, $cwnd_gain, $full_bw_reached, $full_bw_cnt, $cycle_idx, $full_bw);
+		//printf("0x%16llx,%lld,%d,%016llx,%016llx,%1llx,%1llx\n",
+		//	arg0, elapsed / 1000, $port, $bbr[7], $bbr[8], $mode, $probe_rtt_round_done);
+	}
+	
+}
