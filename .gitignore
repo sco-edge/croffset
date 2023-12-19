@@ -1,7 +1,7 @@
 pping
 data/
-iperfs/riperf/debug/
-iperfs/riperf/target/
+iperfs/rust-iperf/debug/
+iperfs/rust-iperf/target/
 *.ll
 *.o
 *.csv
