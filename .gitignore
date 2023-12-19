@@ -1,5 +1,7 @@
 pping
 data/
+iperfs/riperf/debug/
+iperfs/riperf/target/
 *.ll
 *.o
 *.csv
