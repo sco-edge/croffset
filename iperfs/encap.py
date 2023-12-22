@@ -23,24 +23,28 @@ class FlowStat:
 def main():
     num_flows = 6
     time = 60
-    server_addr = "192.168.2.103"
+    # server_addr = "192.168.2.103"
     interface = "ens801f0"
     cca = "bbr"
     tag = ""
+    server_node = "tarl"
 
     if not tag:
-        experiment = f"h-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"e-f{num_flows}-t{time}-{cca}-0"
     else:
-        experiment = f"h-{tag}-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"e-{tag}-f{num_flows}-t{time}-{cca}-0"
 
     (epping_p, epping_f) = run_epping(interface)
-    flows = run_iperf_clients(num_flows, time, server_addr)
+    # run_k8s_iperf_server(server_node)
+    server_addrs = get_k8s_iperf_server_addrs()
+    client_pods = get_k8s_iperf_client_pods()
+    flows = run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods)
     post_process_epping(epping_p, epping_f, experiment, num_flows, flows)
 
 def run_epping(interface):
     os.chdir("..")
     f = tempfile.NamedTemporaryFile()
-    p = subprocess.Popen(["./pping", "-i", interface], stdout=f)
+    p = subprocess.Popen(["./pping", "-i", interface, "-V"], stdout=f)
 
     time.sleep(2)
     return (p, f)
@@ -59,7 +63,7 @@ def post_process_epping(epping_p, epping_f, experiment, num_flows, flows):
 
     for flow in flows:
         epping_f.seek(0)
-        samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+        samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
 
         x = list(zip(*samples))[0]
         y = list(zip(*samples))[1]
@@ -91,14 +95,35 @@ def post_process_epping(epping_p, epping_f, experiment, num_flows, flows):
         aggregate_throughput += flow.throughput
     print(f"{experiment} Aggregate Throughput: {aggregate_throughput / 1000000000:.1f} Gbps")
 
-def run_iperf_clients(num_flows, time, server_addr):
+def get_k8s_iperf_server_addrs():
+    first = ['kubectl', 'get', 'pods', '-owide']
+    second = ['awk', '/iperf-server/ {print $6}']
+    p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
+    p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
+    p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
+    output = p2.communicate()[0]
+    addresses = output.split('\n')
+    return addresses[:-1]
+
+def get_k8s_iperf_client_pods():
+    first = ['kubectl', 'get', 'pods', '-owide']
+    second = ['awk', '/iperf-client/ {print $1}']
+    p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
+    p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
+    p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
+    output = p2.communicate()[0]
+    addresses = output.split('\n')
+    return addresses[:-1]
+
+def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
     flows = []
     processes = []
     for i in range(0, num_flows):
-        port = 5200 + i
+        port = 5300 + i
         cpu = 16 + i
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(["iperf3", "-c", server_addr, "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)], stdout=f)
+        # p = subprocess.Popen(["iperf3", "-c", server_addrs[i], "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)], stdout=f)
+        p = subprocess.Popen(["kubectl", "exec", client_pods[i], "--", "iperf3", "-c", server_addrs[i], "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)], stdout=f)
         processes.append((p, f))
         flow = FlowStat()
         flow.dport = port
@@ -107,6 +132,10 @@ def run_iperf_clients(num_flows, time, server_addr):
     print(f"Start {num_flows} flows for {time} seconds.")
     for (p, f) in processes:
         p.wait()
+        f.seek(0)
+        # lines = f.readlines()
+        # for l in lines:
+        #     print(l.decode('utf-8'), end='')
         f.seek(0)
         data = json.load(f)
         dport = data["start"]["connected"][0]["remote_port"]
