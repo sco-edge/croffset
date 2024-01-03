@@ -39,7 +39,10 @@ def main():
     (epping_p, epping_f) = run_epping(interface)
     flows = run_iperf_clients(num_flows, time, server_addr)
 
+    if not os.path.exists("data"):
+        os.mkdir("data")
     os.chdir("data")
+
     while os.path.exists(experiment):
         (remained, last) = experiment.rsplit("-", 1)
         trial = int(last) + 1

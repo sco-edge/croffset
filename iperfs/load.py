@@ -25,7 +25,10 @@ def main():
         if line == "e":
             break
 
+    if not os.path.exists("../data"):
+        os.mkdir("../data")
     os.chdir("../data")
+    
     while os.path.exists(experiment):
         (remained, last) = experiment.rsplit("-", 1)
         trial = int(last) + 1
