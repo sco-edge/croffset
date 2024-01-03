@@ -3,9 +3,9 @@ import numpy as np
 import re
 import os
 
-experiment = 'bbr-h-fq_codel-port'
+experiment = 'bbr-1M'
 os.chdir(f'../data/{experiment}')
-for num in range (0, 6):
+for num in range (0, 1):
     name = f'{num}.{experiment}'
     print(name, end=' ')
     with open(f'f{name}.csv') as file:
@@ -51,8 +51,9 @@ for num in range (0, 6):
         plot.xticks(np.linspace(*xrange, 7))
         plot.yticks(np.linspace(*yrange, 11))
 
-        plot.plot(x, y, linewidth=0.5)
+        plot.plot(x, y, linewidth=0.1)
         plot.savefig(f'out.rtt.{name}.png', dpi=300, bbox_inches='tight', pad_inches=0.05)
+        # plot.savefig(f'out.rtt.{name}.eps', format='eps', bbox_inches='tight', pad_inches=0.05)
 
         x = list(zip(*data_delivered))[0]
         y = list(zip(*data_delivered))[1]

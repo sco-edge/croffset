@@ -43,7 +43,8 @@ done
 
 for POD in ${CLIENTS}; do
     echo "[Run] iperf-client pod ${POD}"
-    kubectl exec ${POD} -- iperf -c iperf-server $@ &> /dev/null &
+    # kubectl exec ${POD} -- iperf -c iperf-server $@ &> /dev/null &
+    kubectl exec ${POD} -- iperf -c iperf-server $@
 done
 
 until [[ $(jobs | grep -v Running) != "" ]]; do
@@ -53,7 +54,7 @@ done
 printf " done\n"
 
 echo
-kubectl logs --tail=20 -l app=iperf-server 
+kubectl logs --tail=100 -l app=iperf-client 
 echo
 
 echo "[Cleanup]"

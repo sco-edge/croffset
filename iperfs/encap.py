@@ -21,11 +21,10 @@ class FlowStat:
     rtt_std:float = None
 
 def main():
-    num_flows = 6
+    num_flows = 1
     time = 60
-    # server_addr = "192.168.2.103"
     interface = "ens801f0"
-    cca = "bbr"
+    cca = "cubic"
     tag = ""
     server_node = "tarl"
 
@@ -34,6 +33,7 @@ def main():
     else:
         experiment = f"e-{tag}-f{num_flows}-t{time}-{cca}-0"
 
+    print(experiment)
     (epping_p, epping_f) = run_epping(interface)
     # run_k8s_iperf_server(server_node)
     server_addrs = get_k8s_iperf_server_addrs()
@@ -97,7 +97,8 @@ def post_process_epping(epping_p, epping_f, experiment, num_flows, flows):
 
 def get_k8s_iperf_server_addrs():
     first = ['kubectl', 'get', 'pods', '-owide']
-    second = ['awk', '/iperf-server/ {print $6}']
+    # second = ['awk', '/iperf-server/ {print $6}']
+    second = ['perl', '-nE', r'say $7 if /^(iperf-server.*?)\s+(.*?)\s+(.*?)\s+(.*?)\s+(\(.*?\))?\s+(.*?)\s+(.*?)\s+.*/']
     p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.

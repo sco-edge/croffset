@@ -37,9 +37,38 @@ def parse(experiment, protocol, saddr, sport, daddr, dport):
 
     return np.array(samples)
 
-experiment = 'bbr-h-fq_codel-port'
+experiment = 'affinity'
 os.chdir(f'../data/{experiment}')
-dst_ports = [39762, 39788, 39776, 39768, 39816, 39800]
+# host
+# dst_ports = [39762, 39788, 39776, 39768, 39816, 39800]
+
+# encap
+# dst_ports = [46072, 46100, 46056, 46082, 46098, 46046]
+
+# host 6gbps
+# dst_ports = [55170, 55184, 55204, 55194, 55180, 55168]
+
+# encap 6gbps
+# dst_ports = [40528, 40564, 40512, 40518, 40548, 40536]
+
+# host single 6gbps
+# dst_ports = [59752]
+
+# encap single 6gbps
+# dst_ports = [52004]
+
+# host single
+# dst_ports = [44570]
+
+# encap single
+# dst_ports = [50518]
+
+# cubic [7.86, 23.5, 23.5, 7.85, 23.5, 7.86]
+# dst_ports = [60568, 60582, 60570, 60604, 60584, 60588]
+
+# affinity bbr
+dst_ports = [52710, 51228, 54008, 58222, 43096, 41226]
+
 num = 0
 for dst_port in dst_ports:
     name = f'{num}.{experiment}'
@@ -48,11 +77,11 @@ for dst_port in dst_ports:
     #     # print(timestamp_ns / np.timedelta64(1, "ms"), sample)
     #     print(timestamp_ns / np.timedelta64(1, "s"), sample)
 
-    average = np.average(samples, axis=0)[1]
-    print(f'{name} ({dst_port}): {average:.3f}')
+    # print(f'{name} ({dst_port}): {np.average(samples, axis=0)[1]:.3f} ({np.std(samples, axis=0)[1]:.3f})')
 
     x = list(zip(*samples))[0]
     y = list(zip(*samples))[1]
+    print(f'{name} ({dst_port}): {np.average(y):.3f} ({np.std(y):.3f})')
 
     figure = plot.figure(figsize=(10, 6))
     xrange = np.array([0, 60000000])

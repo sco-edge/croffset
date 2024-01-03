@@ -15,9 +15,10 @@ kprobe:bbr_update_model
 	//if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
 	//	printf("0x%llx,%lld,%ld,%ld,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited);
 	//}
-	if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
-		printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
-	}
+	//if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
+	//	printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
+	//}
+	printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
 	//if ($rs->delivered != -1 && $rs->interval_us != -1) {
 	//	printf("0x%llx,%lld,%ld,%ld,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited);
 	//}
