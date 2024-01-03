@@ -30,9 +30,9 @@ def main():
     tag = ""
 
     if not tag:
-        experiment = f"h-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-0"
     else:
-        experiment = f"h-{tag}-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"tx-h-{tag}-f{num_flows}-t{time}-{cca}-0"
 
     (util_p, util_f) = start_cpu_utilization()
     interrupt_f = start_interrupt_count()
@@ -74,7 +74,6 @@ def end_cpu_utilization(p, f, experiment):
     if not args.silent:
         subprocess.run(["../../iperfs/cpu.py", "-c", f.name])
     
-
 def start_interrupt_count():
     f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/interrupts"], stdout=f)
