@@ -143,7 +143,7 @@ def post_process_epping(epping_p, epping_f, experiment, flows):
         gbps = flow.throughput
         diff = flow.iperf_rtt_mean_us - flow.rtt_mean
         print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>7}, h{flow.sutilization:>4.1f}%, r{flow.dutilization:>4.1f}% \
-{flow.iperf_rtt_mean_us} us {flow.rtt_mean:.0f} us (+{diff:>3.0f} us +{(diff/flow.rtt_mean * 100):>4.1f}% std: {flow.rtt_std:>3.0f})')
+{flow.iperf_rtt_mean_us} us {flow.rtt_mean:.0f} us ({diff:>4.0f} us {(diff/flow.rtt_mean * 100):>5.1f}% std: {flow.rtt_std:>3.0f})')
         aggregate_throughput += flow.throughput
         data[f"flow{i}"] = vars(flow)
 
