@@ -14,10 +14,9 @@ class FlowStat:
     dport:int = None
     throughput:float = None
     retransmissions:int = None
-    iperf_rtt_mean_us:int = None
+    iperf_rtt_mean:int = None
     sutilization:float = None
     dutilization:float = None
-    iperf_rtt_mean:float = None
     nic_rtt_mean:float = None
     nic_rtt_std:float = None
     tcp_rtt_mean:float = None
@@ -39,7 +38,8 @@ def main():
     (util_p, util_f) = start_cpu_utilization()
     interrupt_f = get_interrupt_count()
     (epping_p, epping_f) = start_epping(interface)
-    (bpf_p, bpf_f) = start_bpftrace()
+    if not args.no_bpftrace:
+        (bpf_p, bpf_f) = start_bpftrace()
     flows = run_iperf_clients(num_flows, time, server_addr)
 
     if not os.path.exists("data"):
@@ -57,7 +57,10 @@ def main():
     end_cpu_utilization(util_p, util_f, experiment)
     process_interrupt_count(interrupt_f, experiment)
     epping_map = end_epping(epping_p, epping_f, flows)
-    bpftrace_map = end_bpftrace(bpf_p, bpf_f, flows)
+    if not args.no_bpftrace:
+        bpftrace_map = end_bpftrace(bpf_p, bpf_f, flows)
+    else:
+        bpftrace_map = {}
 
     json_data = {}
     aggregate_throughput = 0
@@ -70,16 +73,28 @@ def main():
         flow.nic_rtt_mean = np.average(epping_map[i][1])
         flow.nic_rtt_std = np.std(epping_map[i][1])
 
-        flow.tcp_rtt_mean = np.average(bpftrace_map[i][1])
-        flow.tcp_rtt_std = np.std(bpftrace_map[i][1])
+        if not args.no_bpftrace:
+            flow.tcp_rtt_mean = np.average(bpftrace_map[i][1])
+            flow.tcp_rtt_std = np.std(bpftrace_map[i][1])
 
-        peak_per_flow = max(np.max(bpftrace_map[i][1]), np.max(epping_map[i][1]))
-        if peak_per_flow >= peak:
-            peak = peak_per_flow
-        
-        max_time_per_flow = min(np.max(bpftrace_map[i][0]), np.max(epping_map[i][0]))
-        if max_time_per_flow <= reduced_time:
-            reduced_time = max_time_per_flow
+            peak_per_flow = max(np.max(bpftrace_map[i][1]), np.max(epping_map[i][1]))
+            if peak_per_flow >= peak:
+                peak = peak_per_flow
+            
+            max_time_per_flow = min(np.max(bpftrace_map[i][0]), np.max(epping_map[i][0]))
+            if max_time_per_flow <= reduced_time:
+                reduced_time = max_time_per_flow
+        else:
+            flow.tcp_rtt_mean = flow.iperf_rtt_mean
+            flow.tcp_rtt_std = 0
+
+            peak_per_flow = np.max(epping_map[i][1])
+            if peak_per_flow >= peak:
+                peak = peak_per_flow
+            
+            max_time_per_flow = np.max(epping_map[i][0])
+            if max_time_per_flow <= reduced_time:
+                reduced_time = max_time_per_flow
 
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
@@ -94,7 +109,7 @@ def main():
         json.dump(json_data, f)
     
     plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time, experiment)
-    
+
 def start_cpu_utilization():
     f = tempfile.NamedTemporaryFile()
     p = subprocess.Popen(["./cpuload.sh"], stdout=f)
@@ -216,9 +231,6 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time, experiment):
     minlen = min(len(epping_map), len(bpftrace_map))
 
     for i in range(0, minlen):
-        (ex, ey) = epping_map[i]
-        (bx, by, bz) = bpftrace_map[i]
-
         figure = plot.figure(figsize=(10, 6))
         xrange = np.array([0, max_time])
         yrange = np.array([0, peak])
@@ -227,9 +239,13 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time, experiment):
         plot.xticks(np.linspace(*xrange, 7))
         plot.yticks(np.linspace(*yrange, 11))
 
+        (ex, ey) = epping_map[i]
         # plot.plot(x, y, 'o-', label='No mask')
         plot.plot(ex, ey, linewidth=0.5)
-        plot.plot(bx, by, linewidth=0.1)
+
+        if not args.no_bpftrace:
+            (bx, by, bz) = bpftrace_map[i]
+            plot.plot(bx, by, linewidth=0.1)
         
         name = f'{i}.{experiment}'
         output = f"rtt.{name}.png"
@@ -259,7 +275,7 @@ def run_iperf_clients(num_flows, time, server_addr):
         flow.sport = data["start"]["connected"][0]["local_port"]
         flow.throughput = data["end"]["sum_sent"]["bits_per_second"] / 1000000000
         flow.retransmissions = data["end"]["sum_sent"]["retransmits"]
-        flow.iperf_rtt_mean_us = data["end"]["streams"][0]["sender"]["mean_rtt"]
+        flow.iperf_rtt_mean = data["end"]["streams"][0]["sender"]["mean_rtt"]
         flow.sutilization = data["end"]["cpu_utilization_percent"]["host_total"]
         flow.dutilization = data["end"]["cpu_utilization_percent"]["remote_total"]
 
@@ -306,6 +322,8 @@ if __name__ == "__main__":
     parser.add_argument('--time', '-t', default=60)
     parser.add_argument('--silent', '-s', action='store_true')
     parser.add_argument('--vxlan', '-v', action='store_true')
+
+    parser.add_argument('--no-bpftrace', '-b', action='store_true')
 
     global args
     args = parser.parse_args()
