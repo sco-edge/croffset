@@ -10,9 +10,9 @@ while (my $line = <$trace>) {
 }
 
 my @keys = (reverse sort { $data{$a} <=> $data{$b} } keys %data);
-# foreach $key (@keys) {
-#     print "$key, $data{$key}\n";
-# }
+foreach $key (@keys) {
+    print "$key, $data{$key}\n";
+}
 close $trace;
 
 foreach (0..$num-1) {
