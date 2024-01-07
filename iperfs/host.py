@@ -28,20 +28,15 @@ def main():
     server_addr = "192.168.2.103"
     interface = "ens801f0"
     cca = "bbr"
-    tag = ""
 
-    if not tag:
-        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-0"
+    global experiment
+
+    if args.vxlan:
+        experiment = f"tx-e-f{num_flows}-t{time}-{cca}-0"
     else:
-        experiment = f"tx-h-{tag}-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-0"
 
-    (util_p, util_f) = start_cpu_utilization()
-    interrupt_f = get_interrupt_count()
-    (epping_p, epping_f) = start_epping(interface)
-    if not args.no_bpftrace:
-        (bpf_p, bpf_f) = start_bpftrace()
-    flows = run_iperf_clients(num_flows, time, server_addr)
-
+    os.chdir("..")
     if not os.path.exists("data"):
         os.mkdir("data")
     os.chdir("data")
@@ -54,8 +49,22 @@ def main():
     os.mkdir(experiment)
     os.chdir(experiment)
 
-    end_cpu_utilization(util_p, util_f, experiment)
-    process_interrupt_count(interrupt_f, experiment)
+    (util_p, util_f) = start_cpu_utilization()
+    interrupt_f = get_interrupt_count()
+    (epping_p, epping_f) = start_epping(interface)
+
+    if not args.no_bpftrace:
+        (bpf_p, bpf_f) = start_bpftrace()
+
+    if args.vxlan:
+        server_addrs = get_k8s_iperf_server_addrs()
+        client_pods = get_k8s_iperf_client_pods()
+        flows = run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods)
+    else:    
+        flows = run_iperf_clients(num_flows, time, server_addr)
+
+    end_cpu_utilization(util_p, util_f)
+    process_interrupt_count(interrupt_f)
     epping_map = end_epping(epping_p, epping_f, flows)
     if not args.no_bpftrace:
         bpftrace_map = end_bpftrace(bpf_p, bpf_f, flows)
@@ -105,24 +114,24 @@ def main():
 
     print(f'Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
     json_data["aggregate throughput"] = aggregate_throughput
-    with open(f'{experiment}.json', 'w') as f:
+    with open(f'summary.{experiment}.json', 'w') as f:
         json.dump(json_data, f)
     
-    plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time, experiment)
+    plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time)
 
 def start_cpu_utilization():
     f = tempfile.NamedTemporaryFile()
-    p = subprocess.Popen(["./cpuload.sh"], stdout=f)
+    p = subprocess.Popen(['./cpuload.sh'], stdout=f, cwd='../../iperfs')
 
     return (p, f)
 
-def end_cpu_utilization(p, f, experiment):
+def end_cpu_utilization(p, f):
     p.kill()
     with open(f'cpu.{experiment}.out', 'w') as cpu_output:
-        subprocess.run(["../../iperfs/cpu.py", f.name], stdout=cpu_output)
+        subprocess.run(["./cpu.py", f.name], stdout=cpu_output, cwd='../../iperfs')
 
     if not args.silent:
-        subprocess.run(["../../iperfs/cpu.py", "-c", f.name])
+        subprocess.run(["./cpu.py", "-c", f.name], cwd='../../iperfs')
     
 def get_interrupt_count():
     f = tempfile.NamedTemporaryFile()
@@ -130,20 +139,22 @@ def get_interrupt_count():
 
     return f
 
-def process_interrupt_count(old_f, experiment):
+def process_interrupt_count(old_f):
     new_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/interrupts"], stdout=new_f)
 
     with open(f'int.{experiment}.out', 'w') as interrupt_output:
-        subprocess.run(["../../iperfs/interrupts.py", old_f.name, new_f.name], stdout=interrupt_output)
+        subprocess.run(["./interrupts.py", old_f.name, new_f.name], stdout=interrupt_output, cwd='../../iperfs')
 
     if not args.silent:
-        subprocess.run(["../../iperfs/interrupts.py", old_f.name, new_f.name])
+        subprocess.run(["./interrupts.py", old_f.name, new_f.name], cwd='../../iperfs')
 
 def start_epping(interface):
-    os.chdir("..")
     f = tempfile.NamedTemporaryFile()
-    p = subprocess.Popen(["./pping", "-i", interface], stdout=f)
+    if args.vxlan:
+        p = subprocess.Popen(["./pping", "-i", interface, "-V"], stdout=f, cwd='../..')
+    else:
+        p = subprocess.Popen(["./pping", "-i", interface], stdout=f, cwd='../..')
 
     time.sleep(2)
     return (p, f)
@@ -153,24 +164,32 @@ def end_epping(epping_p, epping_f, flows):
 
     epping_map = {}
 
-    for (i, flow) in enumerate(flows):
-        epping_f.seek(0)
-        samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+    with open(epping_f.name, 'r') as epping_f:
+        for (i, flow) in enumerate(flows):
+            epping_f.seek(0)
+            if args.vxlan:
+                samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+            else:
+                samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
 
-        if len(samples) == 0:
-            print("There is no epping samples.")
-            exit(-1)
+            if len(samples) == 0:
+                print("There is no epping samples.")
+                exit(-1)
 
-        x = list(zip(*samples))[0]
-        y = list(zip(*samples))[1]
+            x = list(zip(*samples))[0]
+            y = list(zip(*samples))[1]
 
-        epping_map[i] = (x, y)
+            epping_map[i] = (x, y)
+
+            with open(f'epping.{i}.{experiment}.out', 'w') as epping_output_per_flow:
+                for j, _ in enumerate(epping_map[i][0]):
+                    epping_output_per_flow.write(f'{epping_map[i][0][j].astype(int)},{epping_map[i][1][j]}\n')
 
     return epping_map
 
 def start_bpftrace():
     f = tempfile.NamedTemporaryFile()
-    p = subprocess.Popen(["./bbr.bt"], stdout=f)
+    p = subprocess.Popen(["./bbr.bt"], stdout=f, cwd='../..')
 
     return (p, f)
 
@@ -180,30 +199,35 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
     initial_timestamp_ns = 0
     bpftrace_map = {}
 
-    for i, flow in enumerate(flows):
-        bpftrace_f.seek(0)
-        for line in bpftrace_f.readlines():
-            data = line.decode('utf-8').split(',')
-            if len(data) != 6:
-                continue
+    with open(bpftrace_f.name, 'r') as bpftrace_f:
+        for i, flow in enumerate(flows):
+            bpftrace_f.seek(0)
+            for line in bpftrace_f.readlines():
+                data = line.split(',')
+                if len(data) != 6:
+                    continue
 
-            if initial_timestamp_ns == 0:
-                initial_timestamp_ns = int(data[1])
-                elapsed = 0
-            else:
-                elapsed = int(data[1]) - initial_timestamp_ns
-            delivered = int(data[2])
-            rtt_us = int(data[3])
-            port = int(data[5])
+                if initial_timestamp_ns == 0:
+                    initial_timestamp_ns = int(data[1])
+                    elapsed = 0
+                else:
+                    elapsed = int(data[1]) - initial_timestamp_ns
+                delivered = int(data[2])
+                rtt_us = int(data[3])
+                port = int(data[5])
 
-            if port == flow.sport:
-                if not i in bpftrace_map:
-                    bpftrace_map[i] = ([], [], [])
-                
-                (x, y, z) = bpftrace_map[i]
-                x.append(elapsed)
-                y.append(rtt_us)
-                z.append(delivered)
+                if port == flow.sport:
+                    if not i in bpftrace_map:
+                        bpftrace_map[i] = ([], [], [])
+                    
+                    (x, y, z) = bpftrace_map[i]
+                    x.append(elapsed)
+                    y.append(rtt_us)
+                    z.append(delivered)
+            
+            with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
+                for j, _ in enumerate(bpftrace_map[i][0]):
+                    bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]}\n')
 
     return bpftrace_map
 
@@ -227,33 +251,10 @@ def get_k8s_iperf_client_pods():
     addresses = output.split('\n')
     return addresses[:-1]
 
-def plot_graphs(epping_map, bpftrace_map, peak, max_time, experiment):
-    minlen = min(len(epping_map), len(bpftrace_map))
-
-    for i in range(0, minlen):
-        figure = plot.figure(figsize=(10, 6))
-        xrange = np.array([0, max_time])
-        yrange = np.array([0, peak])
-        plot.xlim(xrange)
-        plot.ylim(yrange)
-        plot.xticks(np.linspace(*xrange, 7))
-        plot.yticks(np.linspace(*yrange, 11))
-
-        (ex, ey) = epping_map[i]
-        # plot.plot(x, y, 'o-', label='No mask')
-        plot.plot(ex, ey, linewidth=0.5)
-
-        if not args.no_bpftrace:
-            (bx, by, bz) = bpftrace_map[i]
-            plot.plot(bx, by, linewidth=0.1)
-        
-        name = f'{i}.{experiment}'
-        output = f"rtt.{name}.png"
-        plot.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
-
 def run_iperf_clients(num_flows, time, server_addr):
     flows = []
     processes = []
+
     for i in range(0, num_flows):
         port = 5200 + i
         cpu = 16 + i
@@ -283,6 +284,63 @@ def run_iperf_clients(num_flows, time, server_addr):
 
     return flows
 
+def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
+    flows = []
+    processes = []
+
+    for i in range(0, num_flows):
+        port = 5200 + i
+        cpu = 16 + i
+        f = tempfile.NamedTemporaryFile()
+        p = subprocess.Popen(["kubectl", "exec", client_pods[i], "--", "iperf3", "-c", server_addrs[i], "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)], stdout=f)
+        processes.append((p, f))
+        flow = FlowStat()
+        flow.dport = port
+        flows.append(flow)
+
+    print(f"Start {num_flows} flows for {time} seconds.")
+    for (p, f) in processes:
+        p.wait()
+        f.seek(0)
+        data = json.load(f)
+        dport = data["start"]["connected"][0]["remote_port"]
+        _, flow = find_flow(flows, dport)
+
+        flow.sport = data["start"]["connected"][0]["local_port"]
+        flow.throughput = data["end"]["sum_sent"]["bits_per_second"] / 1000000000
+        flow.retransmissions = data["end"]["sum_sent"]["retransmits"]
+        flow.iperf_rtt_mean = data["end"]["streams"][0]["sender"]["mean_rtt"]
+        flow.sutilization = data["end"]["cpu_utilization_percent"]["host_total"]
+        flow.dutilization = data["end"]["cpu_utilization_percent"]["remote_total"]
+
+        f.close()
+
+    return flows
+
+def plot_graphs(epping_map, bpftrace_map, peak, max_time):
+    minlen = min(len(epping_map), len(bpftrace_map))
+
+    for i in range(0, minlen):
+        figure = plot.figure(figsize=(10, 6))
+        xrange = np.array([0, max_time])
+        yrange = np.array([0, peak])
+        plot.xlim(xrange)
+        plot.ylim(yrange)
+        plot.xticks(np.linspace(*xrange, 7))
+        plot.yticks(np.linspace(*yrange, 11))
+
+        if not args.no_bpftrace:
+            (bx, by, bz) = bpftrace_map[i]
+            plot.plot(bx, by, linewidth=0.1)
+
+        (ex, ey) = epping_map[i]
+        # plot.plot(x, y, 'o-', label='No mask')
+        plot.plot(ex, ey, linewidth=0.5)
+        
+        name = f'{i}.{experiment}'
+        output = f"rtt.{name}.png"
+        plot.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
 def str_to_ns(time_str):
     h, m, s = time_str.split(":")
     int_s, ns = s.split(".")
@@ -296,7 +354,6 @@ def parse(f, protocol, saddr, sport, daddr, dport):
     expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
     lines = f.readlines()
     for l in lines:
-        l = l.decode("utf-8")
         match = expr.search(l)
         if match == None:
             continue
