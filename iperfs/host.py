@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import json
 import os
-import matplotlib.pyplot as plot
+import matplotlib.pyplot as pp
 import numpy as np
 import re
 import time
@@ -54,11 +54,19 @@ def main():
     (epping_p, epping_f) = start_epping(interface)
 
     if not args.no_bpftrace:
-        (bpf_p, bpf_f) = start_bpftrace()
+        (bpftrace_p, bpftrace_f) = start_bpftrace()
 
     if args.vxlan:
         server_addrs = get_k8s_iperf_server_addrs()
         client_pods = get_k8s_iperf_client_pods()
+
+        if len(server_addrs) == 0 or len(client_pods) == 0:
+            epping_p.kill()
+            util_p.kill()
+            if not args.no_bpftrace:
+                bpftrace_p.kill()
+            print('Check that kubeconfig is properly set.')
+            exit(-1)
         flows = run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods)
     else:    
         flows = run_iperf_clients(num_flows, time, server_addr)
@@ -67,7 +75,7 @@ def main():
     process_interrupt_count(interrupt_f)
     epping_map = end_epping(epping_p, epping_f, flows)
     if not args.no_bpftrace:
-        bpftrace_map = end_bpftrace(bpf_p, bpf_f, flows)
+        bpftrace_map = end_bpftrace(bpftrace_p, bpftrace_f, flows)
     else:
         bpftrace_map = {}
 
@@ -261,10 +269,13 @@ def run_iperf_clients(num_flows, time, server_addr):
     processes = []
 
     for i in range(0, num_flows):
-        port = 5200 + i
-        cpu = 16 + i
+        port = 5200 + i * 2
+        cpu = 16 + i * 2
+        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)]
+        if not args.bitrate == "":
+            iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(["iperf3", "-c", server_addr, "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)], stdout=f)
+        p = subprocess.Popen(iperf_args, stdout=f)
         processes.append((p, f))
         flow = FlowStat()
         flow.dport = port
@@ -296,10 +307,13 @@ def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
     processes = []
 
     for i in range(0, num_flows):
-        port = 5200 + i
-        cpu = 16 + i
+        port = 5200 + i * 2
+        cpu = 16 + i * 2
+        iperf_args = ["kubectl", "exec", client_pods[i * 2], "--", "iperf3", "-c", server_addrs[i * 2], "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)]
+        if not args.bitrate == "":
+            iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(["kubectl", "exec", client_pods[i], "--", "iperf3", "-c", server_addrs[i], "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)], stdout=f)
+        p = subprocess.Popen(iperf_args, stdout=f)
         processes.append((p, f))
         flow = FlowStat()
         flow.dport = port
@@ -330,25 +344,33 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time):
     minlen = min(len(epping_map), len(bpftrace_map))
 
     for i in range(0, minlen):
-        figure = plot.figure(figsize=(10, 6))
+        figure = pp.figure(figsize=(10, 6))
         xrange = np.array([0, max_time])
         yrange = np.array([0, peak])
-        plot.xlim(xrange)
-        plot.ylim(yrange)
-        plot.xticks(np.linspace(*xrange, 7))
-        plot.yticks(np.linspace(*yrange, 11))
+        pp.xlim(xrange)
+        pp.ylim(yrange)
+        pp.xticks(np.linspace(*xrange, 7))
+        pp.yticks(np.linspace(*yrange, 11))
 
         if not args.no_bpftrace:
             (bx, by, bz) = bpftrace_map[i]
-            plot.plot(bx, by, linewidth=0.1)
+            pp.plot(bx, by, linewidth=0.1)
 
         (ex, ey) = epping_map[i]
-        # plot.plot(x, y, 'o-', label='No mask')
-        plot.plot(ex, ey, linewidth=0.5)
+        pp.plot(ex, ey, linewidth=0.5)
         
         name = f'{i}.{experiment}'
         output = f"rtt.{name}.png"
-        plot.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+        pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
+        # Distributions
+        bins = np.linspace(50, 500, 451)
+        figure = pp.figure(figsize=(10, 6))
+        pp.hist(by, bins, alpha=0.5, label='bpftrace', density=True)
+        pp.hist(ey, bins, alpha=0.5, label='epping', density=True)
+            
+        output = f"dist.{i}.{experiment}.png"
+        pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
 def str_to_ns(time_str):
     h, m, s = time_str.split(":")
@@ -381,15 +403,16 @@ def find_flow(flows, dport):
     for i, flow in enumerate(flows):
         if flow.dport == dport:
             return (i, flow)
-    
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--flow', '-f', default=6)
     parser.add_argument('--time', '-t', default=60)
     parser.add_argument('--silent', '-s', action='store_true')
     parser.add_argument('--vxlan', '-v', action='store_true')
-
-    parser.add_argument('--no-bpftrace', '-b', action='store_true')
+    parser.add_argument('--bitrate', '-b', default="")
+    parser.add_argument('--neper', '-n', action='store_true')
+    parser.add_argument('--no-bpftrace', action='store_true')
 
     global args
     args = parser.parse_args()
