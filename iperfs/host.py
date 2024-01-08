@@ -180,8 +180,10 @@ def end_epping(epping_p, epping_f, flows):
         for (i, flow) in enumerate(flows):
             epping_f.seek(0)
             if args.vxlan:
+                print(f"{i}: UDP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}", end=" ")
                 samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
             else:
+                print(f"{i}: TCP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}", end=" ")
                 samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
 
             if len(samples) == 0:
@@ -237,6 +239,10 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
                     x.append(elapsed)
                     y.append(rtt_us)
                     z.append(delivered)
+
+            if not bpftrace_map.get(i):
+                print("There is no bpftrace result.")
+                return None
             
             with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
                 for j, _ in enumerate(bpftrace_map[i][0]):
@@ -305,18 +311,18 @@ def run_iperf_clients(num_flows, time, server_addr):
 def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
     flows = []
     processes = []
+    ports = [5200, 5201, 5202, 5203, 5204, 5205, 5206, 5207]
+    cpus = [16, 17, 18, 19, 20, 21, 22, 23]
 
     for i in range(0, num_flows):
-        port = 5200 + i * 2
-        cpu = 16 + i * 2
-        iperf_args = ["kubectl", "exec", client_pods[i * 2], "--", "iperf3", "-c", server_addrs[i * 2], "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)]
+        iperf_args = ["kubectl", "exec", client_pods[i], "--", "iperf3", "-c", server_addrs[i], "-p", str(ports[i]), "-t", str(time), "-J", "-A", str(cpus[i])]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(iperf_args, stdout=f)
         processes.append((p, f))
         flow = FlowStat()
-        flow.dport = port
+        flow.dport = ports[i]
         flows.append(flow)
 
     print(f"Start {num_flows} flows for {time} seconds.")
@@ -378,10 +384,10 @@ def str_to_ns(time_str):
     ns = map(lambda t, unit: np.timedelta64(t, unit), [h,m,int_s,ns.ljust(9, '0')],['h','m','s','ns'])
     return sum(ns)
 
-def parse(f, protocol, saddr, sport, daddr, dport):
+def parse(f, protocol, daddr, dport, saddr, sport):
     samples = []
     initial_timestamp_ns = 0
-    target = protocol + " " + saddr + ":" + sport + "+" + daddr + ":" + dport
+    target = protocol + " " + daddr + ":" + dport + "+" + saddr + ":" + sport
     expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
     lines = f.readlines()
     for l in lines:
@@ -397,6 +403,28 @@ def parse(f, protocol, saddr, sport, daddr, dport):
         rtt_us = float(match.group(2)) * 1000
         samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
 
+    # Check the reverse flow
+    # Why are ports mixed?
+    f.seek(0)
+    reverse_samples = []
+    target = protocol + " " + daddr + ":" + sport + "+" + saddr + ":" + dport
+    expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
+    lines = f.readlines()
+    for l in lines:
+        match = expr.search(l)
+        if match == None:
+            continue
+        
+        timestamp_ns = str_to_ns(match.group(1))
+
+        if initial_timestamp_ns == 0:
+            initial_timestamp_ns = timestamp_ns
+            
+        rtt_us = float(match.group(2)) * 1000
+        reverse_samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
+    
+    print(f"len(samples): {len(samples)}, len(reverse_samples): {len(reverse_samples)}")
+    samples.extend(reverse_samples)
     return np.array(samples)
 
 def find_flow(flows, dport):

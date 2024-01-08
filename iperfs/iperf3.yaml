@@ -13,22 +13,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-1
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -55,22 +50,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-2
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -97,22 +87,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-3
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -139,22 +124,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-4
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -181,22 +161,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-5
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -223,22 +198,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-6
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -265,22 +235,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-7
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -307,22 +272,17 @@ spec:
     metadata:
       labels:
         app: iperf-server-8
-        node: {NODE}
+        node: {CROFFSET_SERVER}
     spec:
       affinity:
         nodeAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            preference:
-              matchExpressions:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
               - key: kubernetes.io/hostname
                 operator: In
                 values:
-                - {NODE}
-      tolerations:
-        - key: node-role.kubernetes.io/master
-          operator: Exists
-          effect: NoSchedule
+                - {CROFFSET_SERVER}
       containers:
       - name: iperf3-server
         image: networkstatic/iperf3
@@ -347,13 +307,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
-  tolerations:
-    - key: node-role.kubernetes.io/master
-      operator: Exists
-      effect: NoSchedule
+            - {CROFFSET_CLIENT}
   containers:
   - name: iperf-client
     image: networkstatic/iperf3
@@ -375,11 +331,11 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
-    - key: node-role.kubernetes.io/master
+    - key: node-role.kubernetes.io/control-plane
       operator: Exists
       effect: NoSchedule
   containers:
@@ -403,9 +359,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
     - key: node-role.kubernetes.io/master
       operator: Exists
@@ -431,9 +387,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
     - key: node-role.kubernetes.io/master
       operator: Exists
@@ -459,9 +415,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
     - key: node-role.kubernetes.io/master
       operator: Exists
@@ -487,9 +443,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
     - key: node-role.kubernetes.io/master
       operator: Exists
@@ -515,9 +471,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
     - key: node-role.kubernetes.io/master
       operator: Exists
@@ -543,9 +499,9 @@ spec:
         nodeSelectorTerms:
         - matchExpressions:
           - key: kubernetes.io/hostname
-            operator: NotIn
+            operator: In
             values:
-            - {NODE}
+            - {CROFFSET_CLIENT}
   tolerations:
     - key: node-role.kubernetes.io/master
       operator: Exists
