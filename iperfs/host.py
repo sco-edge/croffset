@@ -71,6 +71,9 @@ def main():
     else:
         bpftrace_map = {}
 
+    if epping_map == None or bpftrace_map == None:
+        return
+    
     json_data = {}
     aggregate_throughput = 0
     peak = 0
@@ -150,11 +153,12 @@ def process_interrupt_count(old_f):
         subprocess.run(["./interrupts.py", old_f.name, new_f.name], cwd='../../iperfs')
 
 def start_epping(interface):
-    f = tempfile.NamedTemporaryFile()
-    if args.vxlan:
-        p = subprocess.Popen(["./pping", "-i", interface, "-V"], stdout=f, cwd='../..')
-    else:
-        p = subprocess.Popen(["./pping", "-i", interface], stdout=f, cwd='../..')
+    # f = tempfile.NamedTemporaryFile()
+    with open(f'raw.epping.{experiment}.out', 'w') as f:
+        if args.vxlan:
+            p = subprocess.Popen(["./pping", "-i", interface, "-V"], stdout=f, cwd='../..')
+        else:
+            p = subprocess.Popen(["./pping", "-i", interface], stdout=f, cwd='../..')
 
     time.sleep(2)
     return (p, f)
@@ -174,7 +178,7 @@ def end_epping(epping_p, epping_f, flows):
 
             if len(samples) == 0:
                 print("There is no epping samples.")
-                exit(-1)
+                return None
 
             x = list(zip(*samples))[0]
             y = list(zip(*samples))[1]
@@ -188,8 +192,9 @@ def end_epping(epping_p, epping_f, flows):
     return epping_map
 
 def start_bpftrace():
-    f = tempfile.NamedTemporaryFile()
-    p = subprocess.Popen(["./bbr.bt"], stdout=f, cwd='../..')
+    # f = tempfile.NamedTemporaryFile()
+    with open(f'raw.bpftrace.{experiment}.out', 'w') as f:
+        p = subprocess.Popen(["./bbr.bt"], stdout=f, cwd='../..')
 
     return (p, f)
 
@@ -271,7 +276,7 @@ def run_iperf_clients(num_flows, time, server_addr):
         f.seek(0)
         data = json.load(f)
         dport = data["start"]["connected"][0]["remote_port"]
-        _, flow = find_flow(flows, dport)
+        i, flow = find_flow(flows, dport)
 
         flow.sport = data["start"]["connected"][0]["local_port"]
         flow.throughput = data["end"]["sum_sent"]["bits_per_second"] / 1000000000
@@ -281,6 +286,8 @@ def run_iperf_clients(num_flows, time, server_addr):
         flow.dutilization = data["end"]["cpu_utilization_percent"]["remote_total"]
 
         f.close()
+
+        print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}, {flow.retransmissions}, {flow.iperf_rtt_mean}')
 
     return flows
 
@@ -304,7 +311,7 @@ def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
         f.seek(0)
         data = json.load(f)
         dport = data["start"]["connected"][0]["remote_port"]
-        _, flow = find_flow(flows, dport)
+        i, flow = find_flow(flows, dport)
 
         flow.sport = data["start"]["connected"][0]["local_port"]
         flow.throughput = data["end"]["sum_sent"]["bits_per_second"] / 1000000000
@@ -314,6 +321,8 @@ def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
         flow.dutilization = data["end"]["cpu_utilization_percent"]["remote_total"]
 
         f.close()
+
+        print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}, {flow.retransmissions}, {flow.iperf_rtt_mean}')
 
     return flows
 

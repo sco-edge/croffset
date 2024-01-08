@@ -20,11 +20,8 @@ def main():
     (util_p, util_f) = start_cpu_utilization()
     interrupt_f = start_interrupt_count()
 
-    print("Press \'e\' to end the recording.")
-    while True:
-        line = sys.stdin.readline().strip()
-        if line == "e":
-            break
+    print("Press \'Enter\' to end the recording.")
+    line = sys.stdin.readline()
 
     if not os.path.exists("../data"):
         os.mkdir("../data")

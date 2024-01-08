@@ -499,3 +499,59 @@ spec:
     image: networkstatic/iperf3
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-7
+  labels:
+    app: iperf-client-7
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: NotIn
+            values:
+            - {NODE}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-8
+  labels:
+    app: iperf-client-8
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: NotIn
+            values:
+            - {NODE}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
