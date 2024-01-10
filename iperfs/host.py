@@ -22,12 +22,21 @@ class FlowStat:
     tcp_rtt_mean:float = None
     tcp_rtt_std:float = None
 
+class NeperFlowStat:
+    sport:int = None
+    dport:int = None
+    throughput:float = None
+    nic_rtt_mean:float = None
+    nic_rtt_std:float = None
+    tcp_rtt_mean:float = None
+    tcp_rtt_std:float = None
+
 def main():
     num_flows = int(args.flow)
     time = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
-    cca = "bbr"
+    cca = "cubic"
 
     global experiment
 
@@ -56,20 +65,25 @@ def main():
     if not args.no_bpftrace:
         (bpftrace_p, bpftrace_f) = start_bpftrace()
 
-    if args.vxlan:
-        server_addrs = get_k8s_iperf_server_addrs()
-        client_pods = get_k8s_iperf_client_pods()
+    # Using neper
+    if args.neper:
+        flows = run_neper_clients(num_flows, time, server_addr)
+    # Using iperf
+    else:
+        if args.vxlan or args.native:
+            server_addrs = get_k8s_iperf_server_addrs()
+            client_pods = get_k8s_iperf_client_pods()
 
-        if len(server_addrs) == 0 or len(client_pods) == 0:
-            epping_p.kill()
-            util_p.kill()
-            if not args.no_bpftrace:
-                bpftrace_p.kill()
-            print('Check that kubeconfig is properly set.')
-            exit(-1)
-        flows = run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods)
-    else:    
-        flows = run_iperf_clients(num_flows, time, server_addr)
+            if len(server_addrs) == 0 or len(client_pods) == 0:
+                epping_p.kill()
+                util_p.kill()
+                if not args.no_bpftrace:
+                    bpftrace_p.kill()
+                print('Check that kubeconfig is properly set.')
+                exit(-1)
+            flows = run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods)
+        else:    
+            flows = run_iperf_clients(num_flows, time, server_addr)
 
     end_cpu_utilization(util_p, util_f)
     process_interrupt_count(interrupt_f)
@@ -88,7 +102,11 @@ def main():
     reduced_time = 6000000000
 
     print(f'{experiment}')
-    print('i {0:>12} {1:>10} {2:>4} {3:>19} {4:>19} {5:>18}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
+    if args.neper:
+        print('i {0:>12} {1:>12} {2:>19} {3:>19} {4:>18}'. format('flow', 'tput', 'nic_rtt', 'tcp_rtt', 'offset'))
+    else:
+        print('i {0:>12} {1:>10} {2:>5} {3:>19} {4:>19} {5:>18}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
+
     for i, flow in enumerate(flows):
         flow.nic_rtt_mean = np.average(epping_map[i][1])
         flow.nic_rtt_std = np.std(epping_map[i][1])
@@ -118,10 +136,16 @@ def main():
 
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
-        print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>3}, \
+        if args.neper:
+#             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
+# {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
+            print(f'{i} (00000-{flow.dport}): {gbps:>4.1f} qps, \
+{flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
+        else:
+            print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>4}, \
 {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
         aggregate_throughput += flow.throughput
-        json_data[f"flow-{i}"] = vars(flow)
+        json_data[f"flow{i}"] = vars(flow)
 
     print(f'Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
     json_data["aggregate throughput"] = aggregate_throughput
@@ -180,11 +204,23 @@ def end_epping(epping_p, epping_f, flows):
         for (i, flow) in enumerate(flows):
             epping_f.seek(0)
             if args.vxlan:
-                print(f"{i}: UDP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}", end=" ")
-                samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+                print(f"{i}: UDP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
+                target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                samples = parse(epping_f, expr)
+                # samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+            elif args.native:
+                print(f"{i}: TCP *.*.*.*:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
+                target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + ".*?" + re.escape(target) + r"$")
+                samples = parse(epping_f, expr)
+                # samples = parse(epping_f, "TCP", ".*?", str(flow.dport), "192.168.2.102", str(flow.sport))
             else:
-                print(f"{i}: TCP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}", end=" ")
-                samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+                print(f"{i}: TCP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
+                target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                samples = parse(epping_f, expr)
+                # samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
 
             if len(samples) == 0:
                 print("There is no epping samples.")
@@ -270,13 +306,52 @@ def get_k8s_iperf_client_pods():
     addresses = output.split('\n')
     return addresses[:-1]
 
+def run_neper_clients(num_flows, time, server_addr):
+    flows = []
+    processes = []
+
+    for i in range(0, num_flows):
+        port = 5300 + i
+        cpu = 16 + i
+        sport = 42000 + i
+        # neper_args = ["./tcp_rr", "-c", "-H", server_addr, "-P", str(port), "-l", str(time), '--source-port', str(sport), '-Q', '2000', '-R', '20000']
+        neper_args = ["./tcp_rr", "-c", "-H", server_addr, "-P", str(port), "-l", str(time), '-Q', '2000', '-R', '20000']
+        f = tempfile.NamedTemporaryFile()
+        p = subprocess.Popen(neper_args, stdout=f, cwd='../../iperfs')
+        # p = subprocess.Popen(neper_args, stdout=f)
+        processes.append((p, f))
+        flow = NeperFlowStat()
+        flow.dport = port
+        flows.append(flow)
+
+    print(f"Start {num_flows} neper flows for {time} seconds.")
+    for (p, f) in processes:
+        p.wait()
+        f.seek(0)
+        lines = f.readlines()
+        for l in lines:
+            tokens = l.decode('utf-8').split('=')
+            if tokens[0] == 'port':
+                i, flow = find_flow(flows, int(tokens[1]))
+            elif tokens[0] == 'source_port':
+                flow.sport = int(tokens[1])
+            elif tokens[0] == 'throughput':
+                flow.throughput = float(tokens[1])
+        
+        f.close()
+
+        # print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}')
+        print(f'{i}: {flow.dport}, {flow.throughput:.3f}')
+
+    return flows
+
 def run_iperf_clients(num_flows, time, server_addr):
     flows = []
     processes = []
 
     for i in range(0, num_flows):
-        port = 5200 + i * 2
-        cpu = 16 + i * 2
+        port = 5200 + i
+        cpu = 16 + i
         iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
@@ -384,11 +459,9 @@ def str_to_ns(time_str):
     ns = map(lambda t, unit: np.timedelta64(t, unit), [h,m,int_s,ns.ljust(9, '0')],['h','m','s','ns'])
     return sum(ns)
 
-def parse(f, protocol, daddr, dport, saddr, sport):
+def parse(f, expr):
     samples = []
     initial_timestamp_ns = 0
-    target = protocol + " " + daddr + ":" + dport + "+" + saddr + ":" + sport
-    expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
     lines = f.readlines()
     for l in lines:
         match = expr.search(l)
@@ -405,26 +478,26 @@ def parse(f, protocol, daddr, dport, saddr, sport):
 
     # Check the reverse flow
     # Why are ports mixed?
-    f.seek(0)
-    reverse_samples = []
-    target = protocol + " " + daddr + ":" + sport + "+" + saddr + ":" + dport
-    expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
-    lines = f.readlines()
-    for l in lines:
-        match = expr.search(l)
-        if match == None:
-            continue
+    # f.seek(0)
+    # reverse_samples = []
+    # target = protocol + " " + daddr + ":" + sport + "+" + saddr + ":" + dport
+    # expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
+    # lines = f.readlines()
+    # for l in lines:
+    #     match = expr.search(l)
+    #     if match == None:
+    #         continue
         
-        timestamp_ns = str_to_ns(match.group(1))
+    #     timestamp_ns = str_to_ns(match.group(1))
 
-        if initial_timestamp_ns == 0:
-            initial_timestamp_ns = timestamp_ns
+    #     if initial_timestamp_ns == 0:
+    #         initial_timestamp_ns = timestamp_ns
             
-        rtt_us = float(match.group(2)) * 1000
-        reverse_samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
+    #     rtt_us = float(match.group(2)) * 1000
+    #     reverse_samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
     
-    print(f"len(samples): {len(samples)}, len(reverse_samples): {len(reverse_samples)}")
-    samples.extend(reverse_samples)
+    # print(f"len(samples): {len(samples)}, len(reverse_samples): {len(reverse_samples)}")
+    # samples.extend(reverse_samples)
     return np.array(samples)
 
 def find_flow(flows, dport):
@@ -438,8 +511,9 @@ if __name__ == "__main__":
     parser.add_argument('--time', '-t', default=60)
     parser.add_argument('--silent', '-s', action='store_true')
     parser.add_argument('--vxlan', '-v', action='store_true')
+    parser.add_argument('--native', '-n', action='store_true')
     parser.add_argument('--bitrate', '-b', default="")
-    parser.add_argument('--neper', '-n', action='store_true')
+    parser.add_argument('--neper', '-N', action='store_true')
     parser.add_argument('--no-bpftrace', action='store_true')
 
     global args
