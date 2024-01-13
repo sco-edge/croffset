@@ -36,7 +36,7 @@ def main():
     time = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
-    cca = "cubic"
+    cca = "bbr"
 
     global experiment
 
@@ -139,16 +139,20 @@ def main():
         if args.neper:
 #             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
 # {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
-            print(f'{i} (00000-{flow.dport}): {gbps:>4.1f} qps, \
+            print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
 {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
         else:
             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>4}, \
 {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
-        aggregate_throughput += flow.throughput
-        json_data[f"flow{i}"] = vars(flow)
-
-    print(f'Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
+        json_data[f"flow{i}"] = vars(flow)        
+    
+    aggregate_throughput += flow.throughput
     json_data["aggregate throughput"] = aggregate_throughput
+
+    if args.neper:
+        print(f'Aggregate Throughput: {aggregate_throughput:.1f} qps')
+    else:
+        print(f'Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
     with open(f'summary.{experiment}.json', 'w') as f:
         json.dump(json_data, f)
     
@@ -312,16 +316,34 @@ def run_neper_clients(num_flows, time, server_addr):
 
     for i in range(0, num_flows):
         port = 5300 + i
-        cpu = 16 + i
-        sport = 42000 + i
+        # cpu = 16 + i
+        # sport = 42000 + i
         # neper_args = ["./tcp_rr", "-c", "-H", server_addr, "-P", str(port), "-l", str(time), '--source-port', str(sport), '-Q', '2000', '-R', '20000']
-        neper_args = ["./tcp_rr", "-c", "-H", server_addr, "-P", str(port), "-l", str(time), '-Q', '2000', '-R', '20000']
+        # neper_args = ["./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time), '-Q', '2000', '-R', '20000']
+        neper_args = ["./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, cwd='../../iperfs')
         # p = subprocess.Popen(neper_args, stdout=f)
         processes.append((p, f))
+
         flow = NeperFlowStat()
         flow.dport = port
+        # print(f'pid: {p.pid}, dport: {port}')
+        netstat = ['netstat', '-tp']
+        netstat_f = tempfile.NamedTemporaryFile()
+        subprocess.run(netstat, stdout=netstat_f, stderr=subprocess.DEVNULL)
+        with open(netstat_f.name, 'r') as netstat_f:
+            netstat_f.seek(0)
+            for line in netstat_f.readlines():
+                tokens = line.split()
+                if not len(tokens) == 7:
+                    continue
+
+                # print(tokens)
+                if tokens[-1].endswith('tcp_rr') and tokens[-1].startswith(str(p.pid)) and tokens[4].endswith(str(port)):
+                    # print(tokens[3].split(":")[-1])
+                    flow.sport = int(tokens[3].split(":")[-1])
+
         flows.append(flow)
 
     print(f"Start {num_flows} neper flows for {time} seconds.")
@@ -333,15 +355,13 @@ def run_neper_clients(num_flows, time, server_addr):
             tokens = l.decode('utf-8').split('=')
             if tokens[0] == 'port':
                 i, flow = find_flow(flows, int(tokens[1]))
-            elif tokens[0] == 'source_port':
-                flow.sport = int(tokens[1])
             elif tokens[0] == 'throughput':
                 flow.throughput = float(tokens[1])
         
         f.close()
 
-        # print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}')
-        print(f'{i}: {flow.dport}, {flow.throughput:.3f}')
+        print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}')
+        # print(f'{i}: {flow.dport}, {flow.throughput:.3f}')
 
     return flows
 
@@ -445,7 +465,9 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time):
         pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
         # Distributions
-        bins = np.linspace(50, 500, 451)
+        dist_max = max(max(by), max(ey))
+        dist_min = min(min(by), min(ey))
+        bins = np.linspace(dist_min, dist_max, int(dist_max - dist_min) + 1)
         figure = pp.figure(figsize=(10, 6))
         pp.hist(by, bins, alpha=0.5, label='bpftrace', density=True)
         pp.hist(ey, bins, alpha=0.5, label='epping', density=True)
@@ -476,28 +498,6 @@ def parse(f, expr):
         rtt_us = float(match.group(2)) * 1000
         samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
 
-    # Check the reverse flow
-    # Why are ports mixed?
-    # f.seek(0)
-    # reverse_samples = []
-    # target = protocol + " " + daddr + ":" + sport + "+" + saddr + ":" + dport
-    # expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + re.escape(target) + r"$")
-    # lines = f.readlines()
-    # for l in lines:
-    #     match = expr.search(l)
-    #     if match == None:
-    #         continue
-        
-    #     timestamp_ns = str_to_ns(match.group(1))
-
-    #     if initial_timestamp_ns == 0:
-    #         initial_timestamp_ns = timestamp_ns
-            
-    #     rtt_us = float(match.group(2)) * 1000
-    #     reverse_samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
-    
-    # print(f"len(samples): {len(samples)}, len(reverse_samples): {len(reverse_samples)}")
-    # samples.extend(reverse_samples)
     return np.array(samples)
 
 def find_flow(flows, dport):
