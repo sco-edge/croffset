@@ -170,8 +170,7 @@ def main():
             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>4}, \
 {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
         json_data[f"flow{i}"] = vars(flow)        
-    
-    aggregate_throughput += flow.throughput
+        aggregate_throughput += flow.throughput
     json_data["aggregate throughput"] = aggregate_throughput
 
     if args.neper:
