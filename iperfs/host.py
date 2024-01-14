@@ -74,34 +74,34 @@ def main():
     # Using neper
     if args.neper:
         if args.vxlan or args.native:
-            server_addrs = get_k8s_server_addrs('neper')
-            clients = get_k8s_client_pods_and_addrs('neper')
+            servers = get_k8s_servers('neper')
+            clients = get_k8s_clients('neper')
 
-            print(f"Debug: {server_addrs}, {clients}")
-            if len(server_addrs) == 0 or len(clients) == 0:
+            print(f"Debug: {servers}, {clients}")
+            if len(servers) == 0 or len(clients) == 0:
                 epping_p.kill()
                 util_p.kill()
                 if not args.no_bpftrace:
                     bpftrace_p.kill()
                 print('Check that kubeconfig is properly set.')
                 exit(-1)
-            flows = run_k8s_neper_clients(num_flows, time, server_addrs, clients)
+            flows = run_k8s_neper_clients(num_flows, time, servers, clients)
         else:
             flows = run_neper_clients(num_flows, time, server_addr)
     # Using iperf
     else:
         if args.vxlan or args.native:
-            server_addrs = get_k8s_server_addrs('iperf')
-            clients = get_k8s_client_pods_and_addrs('iperf')
+            servers = get_k8s_servers('iperf')
+            clients = get_k8s_clients('iperf')
 
-            if len(server_addrs) == 0 or len(clients) == 0:
+            if len(servers) == 0 or len(clients) == 0:
                 epping_p.kill()
                 util_p.kill()
                 if not args.no_bpftrace:
                     bpftrace_p.kill()
                 print('Check that kubeconfig is properly set.')
                 exit(-1)
-            flows = run_k8s_iperf_clients(num_flows, time, server_addrs, clients)
+            flows = run_k8s_iperf_clients(num_flows, time, servers, clients)
         else:    
             flows = run_iperf_clients(num_flows, time, server_addr)
 
@@ -239,9 +239,9 @@ def end_epping(epping_p, epping_f, flows):
                 samples = parse(epping_f, expr)
                 # samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
             elif args.native:
-                print(f"{i}: TCP *.*.*.*:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
-                target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + ".*?" + re.escape(target) + r"$")
+                print(f"{i}: TCP {str(flow.daddr)}:{str(flow.dport)}+{str(flow.saddr)}:{str(flow.sport)}")
+                target = str(flow.daddr) + ":" + str(flow.dport) + "+" + str(flow.saddr) + ":" + str(flow.sport)
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
                 samples = parse(epping_f, expr)
                 # samples = parse(epping_f, "TCP", ".*?", str(flow.dport), "192.168.2.102", str(flow.sport))
             else:
@@ -315,17 +315,17 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
 
     return bpftrace_map
 
-def get_k8s_server_addrs(target):
+def get_k8s_servers(target):
     first = ['kubectl', 'get', 'pods', '-owide']
-    second = ['perl', '-nE', fr'say $7 if /^({target}-server.*?)\s+(.*?)\s+(.*?)\s+(.*?)\s+(\(.*?\))?\s+(.*?)\s+(.*?)\s+.*/']
+    second = ['perl', '-nE', fr'say $1, " ", $7 if /^({target}-server.*?)\s+(.*?)\s+(.*?)\s+(.*?)\s+(\(.*?\))?\s+(.*?)\s+(.*?)\s+.*/']
     p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
     output = p2.communicate()[0]
-    addresses = output.rstrip().split('\n')
-    return addresses
+    servers = list(map(lambda item: item.split(), output.rstrip().split('\n')))
+    return servers
 
-def get_k8s_client_pods_and_addrs(target):
+def get_k8s_clients(target):
     first = ['kubectl', 'get', 'pods', '-owide']
     second = ['awk', f'/{target}-client/ ' + '{print $1, $6}']
     p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
@@ -429,20 +429,27 @@ def run_iperf_clients(num_flows, time, server_addr):
 
     return flows
 
-def run_k8s_iperf_clients(num_flows, time, server_addrs, clients):
+def run_k8s_iperf_clients(num_flows, time, servers, clients):
     flows = []
     processes = []
     ports = [5200, 5201, 5202, 5203, 5204, 5205, 5206, 5207]
     cpus = [16, 17, 18, 19, 20, 21, 22, 23]
 
     for i in range(0, num_flows):
-        iperf_args = ["kubectl", "exec", clients[i][0], "--", "iperf3", "-c", server_addrs[i], "-p", str(ports[i]), "-t", str(time), "-J", "-A", str(cpus[i])]
+        iperf_args = ["kubectl", "exec", clients[i][0], "--", "iperf3", "-c", servers[i][1], "-p", str(ports[i]), "-t", str(time), "-J", "-A", str(cpus[i])]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(iperf_args, stdout=f)
         processes.append((p, f))
         flow = FlowStat()
+        if args.native:
+            flow.saddr = clients[i][1]
+            flow.daddr = servers[i][1]
+        else:
+            flow.saddr = "192.168.2.102"
+            flow.daddr = "192.168.2.103"
+        
         flow.dport = ports[i]
         flows.append(flow)
 
@@ -467,7 +474,7 @@ def run_k8s_iperf_clients(num_flows, time, server_addrs, clients):
 
     return flows
 
-def run_k8s_neper_clients(num_flows, time, server_addrs, clients):
+def run_k8s_neper_clients(num_flows, time, servers, clients):
     flows = []
     processes = []
     ports = [5300, 5301, 5302, 5303, 5304, 5305, 5306, 5307]
@@ -475,14 +482,20 @@ def run_k8s_neper_clients(num_flows, time, server_addrs, clients):
     # cpus = [16, 17, 18, 19, 20, 21, 22, 23]
 
     for i in range(0, num_flows):
-        neper_args = ["kubectl", "exec", clients[i][0], "--", "./tcp_rr", "--nolog", "-c", "-H", server_addrs[i], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
+        neper_args = ["kubectl", "exec", clients[i][0], "--", "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f)
         processes.append((p, f))
         flow = NeperFlowStat()
-        # flow.saddr = 
-        flow.dport = ports[i]
+        if args.native:
+            flow.saddr = clients[i][1]
+            flow.daddr = servers[i][1]
+        else:
+            flow.saddr = "192.168.2.102"
+            flow.daddr = "192.168.2.103"
+
         flow.sport = sports[i]
+        flow.dport = ports[i]
         flows.append(flow)
 
     print(f"Start {num_flows} neper flows for {time} seconds.")
@@ -503,7 +516,6 @@ def run_k8s_neper_clients(num_flows, time, server_addrs, clients):
         # print(f'{i}: {flow.dport}, {flow.throughput:.3f}')
 
     return flows
-
 
 def plot_graphs(epping_map, bpftrace_map, peak, max_time):
     minlen = min(len(epping_map), len(bpftrace_map))
