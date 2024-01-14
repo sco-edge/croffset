@@ -10,7 +10,9 @@ import time
 import argparse
 
 class FlowStat:
+    saddr:str = None
     sport:int = None
+    daddr:str = None
     dport:int = None
     throughput:float = None
     retransmissions:int = None
@@ -23,7 +25,9 @@ class FlowStat:
     tcp_rtt_std:float = None
 
 class NeperFlowStat:
+    saddr:str = None
     sport:int = None
+    daddr:str = None
     dport:int = None
     throughput:float = None
     nic_rtt_mean:float = None
@@ -71,7 +75,7 @@ def main():
     if args.neper:
         if args.vxlan or args.native:
             server_addrs = get_k8s_server_addrs('neper')
-            client_pods = get_k8s_client_pods('neper')
+            client_pods = get_k8s_client_pods_and_addrs('neper')
 
             print(f"Debug: {server_addrs}, {client_pods}")
             if len(server_addrs) == 0 or len(client_pods) == 0:
@@ -88,7 +92,7 @@ def main():
     else:
         if args.vxlan or args.native:
             server_addrs = get_k8s_server_addrs('iperf')
-            client_pods = get_k8s_client_pods('iperf')
+            client_pods = get_k8s_client_pods_and_addrs('iperf')
 
             if len(server_addrs) == 0 or len(client_pods) == 0:
                 epping_p.kill()
@@ -318,18 +322,19 @@ def get_k8s_server_addrs(target):
     p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
     output = p2.communicate()[0]
-    addresses = output.split('\n')
-    return addresses[:-1]
+    addresses = output.rstrip().split('\n')
+    return addresses
 
-def get_k8s_client_pods(target):
+def get_k8s_client_pods_and_addrs(target):
     first = ['kubectl', 'get', 'pods', '-owide']
-    second = ['awk', f'/{target}-client/ ' + '{print $1}']
+    second = ['awk', f'/{target}-client/ ' + '{print $1, $6}']
     p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
     output = p2.communicate()[0]
-    addresses = output.split('\n')
-    return addresses[:-1]
+    clients = list(map(lambda item: item.split(), output.rstrip().split('\n')))
+
+    return clients
 
 def run_neper_clients(num_flows, time, server_addr):
     flows = []
@@ -475,6 +480,7 @@ def run_k8s_neper_clients(num_flows, time, server_addrs, client_pods):
         p = subprocess.Popen(neper_args, stdout=f)
         processes.append((p, f))
         flow = NeperFlowStat()
+        # flow.saddr = 
         flow.dport = ports[i]
         flow.sport = sports[i]
         flows.append(flow)
