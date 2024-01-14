@@ -67,12 +67,26 @@ def main():
 
     # Using neper
     if args.neper:
-        flows = run_neper_clients(num_flows, time, server_addr)
+        if args.vxlan or args.native:
+            server_addrs = get_k8s_server_addrs('neper')
+            client_pods = get_k8s_client_pods('neper')
+
+            print(f"Debug: {server_addrs}, {client_pods}")
+            if len(server_addrs) == 0 or len(client_pods) == 0:
+                epping_p.kill()
+                util_p.kill()
+                if not args.no_bpftrace:
+                    bpftrace_p.kill()
+                print('Check that kubeconfig is properly set.')
+                exit(-1)
+            flows = run_k8s_neper_clients(num_flows, time, server_addrs, client_pods)
+        else:
+            flows = run_neper_clients(num_flows, time, server_addr)
     # Using iperf
     else:
         if args.vxlan or args.native:
-            server_addrs = get_k8s_iperf_server_addrs()
-            client_pods = get_k8s_iperf_client_pods()
+            server_addrs = get_k8s_server_addrs('iperf')
+            client_pods = get_k8s_client_pods('iperf')
 
             if len(server_addrs) == 0 or len(client_pods) == 0:
                 epping_p.kill()
@@ -103,9 +117,9 @@ def main():
 
     print(f'{experiment}')
     if args.neper:
-        print('i {0:>12} {1:>12} {2:>19} {3:>19} {4:>18}'. format('flow', 'tput', 'nic_rtt', 'tcp_rtt', 'offset'))
+        print('i {0:>10} {1:>8} {2:>15} {3:>15} {4:>13}'. format('flow', 'tput', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
     else:
-        print('i {0:>12} {1:>10} {2:>5} {3:>19} {4:>19} {5:>18}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
+        print('i {0:>10} {1:>10} {2:>5} {3:>19} {4:>19} {5:>18}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
 
     for i, flow in enumerate(flows):
         flow.nic_rtt_mean = np.average(epping_map[i][1])
@@ -139,8 +153,13 @@ def main():
         if args.neper:
 #             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
 # {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
-            print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
-{flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
+#             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
+# {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
+            print('{0:>1} {1:>10}: {2:>7.1f} {3:>6.1f} {4:>8} {5:>6.1f} {6:>8} {7:>5.1f} {8:>7}'. \
+                  format(i, f'{flow.sport}-{flow.dport}', gbps, \
+                         flow.nic_rtt_mean, f'({flow.nic_rtt_std:>.2f})', \
+                         flow.tcp_rtt_mean, f'({flow.tcp_rtt_std:>.2f})', \
+                         diff, f'{(diff/flow.nic_rtt_mean * 100):>6.2f}%'))
         else:
             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>4}, \
 {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
@@ -290,9 +309,9 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
 
     return bpftrace_map
 
-def get_k8s_iperf_server_addrs():
+def get_k8s_server_addrs(target):
     first = ['kubectl', 'get', 'pods', '-owide']
-    second = ['perl', '-nE', r'say $7 if /^(iperf-server.*?)\s+(.*?)\s+(.*?)\s+(.*?)\s+(\(.*?\))?\s+(.*?)\s+(.*?)\s+.*/']
+    second = ['perl', '-nE', fr'say $7 if /^({target}-server.*?)\s+(.*?)\s+(.*?)\s+(.*?)\s+(\(.*?\))?\s+(.*?)\s+(.*?)\s+.*/']
     p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
@@ -300,9 +319,9 @@ def get_k8s_iperf_server_addrs():
     addresses = output.split('\n')
     return addresses[:-1]
 
-def get_k8s_iperf_client_pods():
+def get_k8s_client_pods(target):
     first = ['kubectl', 'get', 'pods', '-owide']
-    second = ['awk', '/iperf-client/ {print $1}']
+    second = ['awk', f'/{target}-client/ ' + '{print $1}']
     p1 = subprocess.Popen(first, stdout=subprocess.PIPE)
     p2 = subprocess.Popen(second, stdin=p1.stdout, stdout=subprocess.PIPE, text=True)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
@@ -440,6 +459,43 @@ def run_k8s_iperf_clients(num_flows, time, server_addrs, client_pods):
         print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}, {flow.retransmissions}, {flow.iperf_rtt_mean}')
 
     return flows
+
+def run_k8s_neper_clients(num_flows, time, server_addrs, client_pods):
+    flows = []
+    processes = []
+    ports = [5300, 5301, 5302, 5303, 5304, 5305, 5306, 5307]
+    sports = [42000, 42001, 42002, 42003, 42004, 42005, 42006, 42007]
+    # cpus = [16, 17, 18, 19, 20, 21, 22, 23]
+
+    for i in range(0, num_flows):
+        neper_args = ["kubectl", "exec", client_pods[i], "--", "./tcp_rr", "--nolog", "-c", "-H", server_addrs[i], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
+        f = tempfile.NamedTemporaryFile()
+        p = subprocess.Popen(neper_args, stdout=f)
+        processes.append((p, f))
+        flow = NeperFlowStat()
+        flow.dport = ports[i]
+        flow.sport = sports[i]
+        flows.append(flow)
+
+    print(f"Start {num_flows} neper flows for {time} seconds.")
+    for (p, f) in processes:
+        p.wait()
+        f.seek(0)
+        lines = f.readlines()
+        for l in lines:
+            tokens = l.decode('utf-8').split('=')
+            if tokens[0] == 'port':
+                i, flow = find_flow(flows, int(tokens[1]))
+            elif tokens[0] == 'throughput':
+                flow.throughput = float(tokens[1])
+        
+        f.close()
+
+        print(f'{i}: {flow.sport}, {flow.dport}, {flow.throughput:.3f}')
+        # print(f'{i}: {flow.dport}, {flow.throughput:.3f}')
+
+    return flows
+
 
 def plot_graphs(epping_map, bpftrace_map, peak, max_time):
     minlen = min(len(epping_map), len(bpftrace_map))
