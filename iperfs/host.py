@@ -36,7 +36,7 @@ def main():
     time = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
-    cca = "cubic"
+    cca = "bbr"
 
     global experiment
 
