@@ -42,6 +42,8 @@ def main():
 
     if args.vxlan:
         experiment = f"tx-e-f{num_flows}-t{time}-{cca}-0"
+    elif args.native:
+        experiment = f"tx-n-f{num_flows}-t{time}-{cca}-0"
     else:
         experiment = f"tx-h-f{num_flows}-t{time}-{cca}-0"
 
