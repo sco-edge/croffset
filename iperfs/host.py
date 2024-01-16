@@ -125,7 +125,7 @@ def main():
     if args.neper:
         print('i {0:>10} {1:>8} {2:>15} {3:>15} {4:>13}'. format('flow', 'tput', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
     else:
-        print('i {0:>10} {1:>10} {2:>5} {3:>19} {4:>19} {5:>18}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
+        print('i {0:>10} {1:>7} {2:>5} {3:>15} {4:>15} {5:>13}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
 
     for i, flow in enumerate(flows):
         flow.nic_rtt_mean = np.average(epping_map[i][1])
@@ -156,27 +156,30 @@ def main():
 
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
+
         if args.neper:
-#             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
-# {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
-#             print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} qps, \
-# {flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
             print('{0:>1} {1:>10}: {2:>7.1f} {3:>6.1f} {4:>8} {5:>6.1f} {6:>8} {7:>5.1f} {8:>7}'. \
                   format(i, f'{flow.sport}-{flow.dport}', gbps, \
                          flow.nic_rtt_mean, f'({flow.nic_rtt_std:>.2f})', \
                          flow.tcp_rtt_mean, f'({flow.tcp_rtt_std:>.2f})', \
                          diff, f'{(diff/flow.nic_rtt_mean * 100):>6.2f}%'))
         else:
-            print(f'{i} ({flow.sport}-{flow.dport}): {gbps:>4.1f} Gbps, {flow.retransmissions:>4}, \
-{flow.nic_rtt_mean:>6.1f} us ({flow.nic_rtt_std:>6.2f}), {flow.tcp_rtt_mean:>6.1f} us ({flow.tcp_rtt_std:>6.2f}), {diff:>5.1f} us ({(diff/flow.nic_rtt_mean * 100):>5.1f}%)')
+            print('{0:>1} {1:>10}: {2:>5.3f} {3:>5} {4:>6.1f} {5:>8} {6:>6.1f} {7:>8} {8:>5.1f} {9:>7}'. \
+                  format(i, f'{flow.sport}-{flow.dport}', gbps, flow.retransmissions, \
+                         flow.nic_rtt_mean, f'({flow.nic_rtt_std:>.2f})', \
+                         flow.tcp_rtt_mean, f'({flow.tcp_rtt_std:>.2f})', \
+                         diff, f'{(diff/flow.nic_rtt_mean * 100):>6.2f}%'))
+            
         json_data[f"flow{i}"] = vars(flow)        
         aggregate_throughput += flow.throughput
+
     json_data["aggregate throughput"] = aggregate_throughput
 
     if args.neper:
         print(f'Aggregate Throughput: {aggregate_throughput:.1f} qps')
     else:
         print(f'Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
+
     with open(f'summary.{experiment}.json', 'w') as f:
         json.dump(json_data, f)
     
@@ -432,10 +435,11 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
     flows = []
     processes = []
     ports = [5200, 5201, 5202, 5203, 5204, 5205, 5206, 5207]
+    sports = [42000, 42001, 42002, 42003, 42004, 42005, 42006, 42007]
     cpus = [16, 17, 18, 19, 20, 21, 22, 23]
 
     for i in range(0, num_flows):
-        iperf_args = ["kubectl", "exec", clients[i][0], "--", "iperf3", "-c", servers[i][1], "-p", str(ports[i]), "-t", str(time), "-J", "-A", str(cpus[i])]
+        iperf_args = ["kubectl", "exec", clients[i][0], "--", "iperf3", "-c", servers[i][1], "-p", str(ports[i]), "--cport", str(sports[i]), "-t", str(time), "-J", "-A", str(cpus[i])]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
