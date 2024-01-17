@@ -143,8 +143,11 @@ def main():
             if max_time_per_flow <= reduced_time:
                 reduced_time = max_time_per_flow
         else:
-            flow.tcp_rtt_mean = flow.iperf_rtt_mean
-            flow.tcp_rtt_std = 0
+            if args.app == 'iperf':
+                flow.tcp_rtt_mean = flow.iperf_rtt_mean
+            else:
+                flow.tcp_rtt_mean = flow.tcp_rtt_mean
+                flow.tcp_rtt_std = flow.tcp_rtt_std
 
             peak_per_flow = np.max(epping_map[i][1])
             if peak_per_flow >= peak:
@@ -385,6 +388,10 @@ def run_neper_clients(num_flows, time, server_addr):
                 i, flow = find_flow(flows, int(tokens[1]))
             elif tokens[0] == 'throughput':
                 flow.throughput = float(tokens[1])
+            elif tokens[0] == 'latency_mean':
+                flow.tcp_rtt_mean = float(tokens[1]) * 1000000
+            elif tokens[0] == 'latency_stddev':
+                flow.tcp_rtt_std = float(tokens[1]) * 1000000
         
         f.close()
 
