@@ -8,14 +8,17 @@ import sys
 def main():
     num_flows = int(args.flow)
     time = int(args.time)
+    app = args.app
     cca = "bbr"
 
     global experiment
 
     if args.vxlan:
-        experiment = f"rx-e-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"rx-e-f{num_flows}-t{time}-{cca}-{app}-0"
+    elif args.native:
+        experiment = f"rx-n-f{num_flows}-t{time}-{cca}-{app}-0"
     else:
-        experiment = f"rx-h-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"rx-h-f{num_flows}-t{time}-{cca}-{app}-0"
 
     (util_p, util_f) = start_cpu_utilization()
     interrupt_f = start_interrupt_count()
@@ -72,8 +75,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--flow', '-f', default=6)
     parser.add_argument('--time', '-t', default=60)
+    parser.add_argument('--app', '-a', default='iperf')
     parser.add_argument('--silent', '-s', action='store_true')
     parser.add_argument('--vxlan', '-v', action='store_true')
+    parser.add_argument('--native', '-n', action='store_true')
 
     global args
     args = parser.parse_args()

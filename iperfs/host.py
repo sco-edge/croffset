@@ -40,16 +40,17 @@ def main():
     time = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
-    cca = "cubic"
+    app = args.app
+    cca = "bbr"
 
     global experiment
 
     if args.vxlan:
-        experiment = f"tx-e-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"tx-e-f{num_flows}-t{time}-{cca}-{app}-0"
     elif args.native:
-        experiment = f"tx-n-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"tx-n-f{num_flows}-t{time}-{cca}-{app}-0"
     else:
-        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-0"
+        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-{app}-0"
 
     os.chdir("..")
     if not os.path.exists("data"):
@@ -219,9 +220,9 @@ def start_epping(interface):
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.epping.{experiment}.out', 'w') as f:
         if args.vxlan:
-            p = subprocess.Popen(["./pping", "-i", interface, "-V"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native", "-V"], stdout=f, cwd='../..')
         else:
-            p = subprocess.Popen(["./pping", "-i", interface], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native"], stdout=f, cwd='../..')
 
     time.sleep(2)
     return (p, f)
@@ -588,6 +589,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--flow', '-f', default=6)
     parser.add_argument('--time', '-t', default=60)
+    parser.add_argument('--app', '-a', default='iperf')
     parser.add_argument('--silent', '-s', action='store_true')
     parser.add_argument('--vxlan', '-v', action='store_true')
     parser.add_argument('--native', '-n', action='store_true')
