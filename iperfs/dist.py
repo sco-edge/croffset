@@ -77,6 +77,13 @@ def plot_dists(target, flow_index):
     output = f"dist2.{flow_index}.{target}.png"
     pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
+    figure = pp.figure(figsize=(10, 6))
+    pp.hist(bpf_data, bins, alpha=0.5, label='bpftrace', histtype='step', cumulative=True, density=True)
+    pp.hist(epping_data, bins, alpha=0.5, label='epping', histtype='step', cumulative=True, density=True)
+        
+    output = f"dist3.{flow_index}.{target}.png"
+    pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

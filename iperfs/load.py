@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import argparse
 import os
+import signal
 import sys
 
 def main():
@@ -19,6 +20,9 @@ def main():
         experiment = f"rx-n-f{num_flows}-t{time}-{cca}-{app}-0"
     else:
         experiment = f"rx-h-f{num_flows}-t{time}-{cca}-{app}-0"
+
+    if args.app == "neper":
+        neper_processes = start_neper_servers(num_flows)
 
     (util_p, util_f) = start_cpu_utilization()
     interrupt_f = start_interrupt_count()
@@ -40,6 +44,24 @@ def main():
 
     end_cpu_utilization(util_p, util_f)
     post_process_interrupt_count(interrupt_f)
+
+    if args.app == "neper":
+        end_neper_servers(neper_processes)
+
+def start_neper_servers(num_flows):
+    neper_processes = []
+    for i in range(0, num_flows):
+        port = 5300 + i
+        neper_args = ["./tcp_rr", "--nolog", "-P", str(port)]
+        f = tempfile.TemporaryFile()
+        p = subprocess.Popen(neper_args, stdout=f)
+        neper_processes.append(p)
+
+    return neper_processes
+
+def end_neper_servers(neper_processes):
+    for process in neper_processes:
+        os.kill(process.pid, signal.SIGTERM)
 
 def start_cpu_utilization():
     f = tempfile.NamedTemporaryFile()
