@@ -40,17 +40,16 @@ def main():
     time = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
-    app = args.app
     cca = "bbr"
 
     global experiment
 
     if args.vxlan:
-        experiment = f"tx-e-f{num_flows}-t{time}-{cca}-{app}-0"
+        experiment = f"tx-e-f{num_flows}-t{time}-{cca}-{args.app}-0"
     elif args.native:
-        experiment = f"tx-n-f{num_flows}-t{time}-{cca}-{app}-0"
+        experiment = f"tx-n-f{num_flows}-t{time}-{cca}-{args.app}-0"
     else:
-        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-{app}-0"
+        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-{args.app}-0"
 
     os.chdir("..")
     if not os.path.exists("data"):
@@ -73,7 +72,7 @@ def main():
         (bpftrace_p, bpftrace_f) = start_bpftrace()
 
     # Using neper
-    if args.neper:
+    if args.app == "neper":
         if args.vxlan or args.native:
             servers = get_k8s_servers('neper')
             clients = get_k8s_clients('neper')
@@ -123,7 +122,7 @@ def main():
     reduced_time = 6000000000
 
     print(f'{experiment}')
-    if args.neper:
+    if args.app == "neper":
         print('i {0:>10} {1:>8} {2:>15} {3:>15} {4:>13}'. format('flow', 'tput', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
     else:
         print('i {0:>10} {1:>7} {2:>5} {3:>15} {4:>15} {5:>13}'. format('flow', 'tput', 'rtx', 'nic_rtt', 'tcp_rtt', 'offset'))
@@ -158,7 +157,7 @@ def main():
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
 
-        if args.neper:
+        if args.app == "neper":
             print('{0:>1} {1:>10}: {2:>7.1f} {3:>6.1f} {4:>8} {5:>6.1f} {6:>8} {7:>5.1f} {8:>7}'. \
                   format(i, f'{flow.sport}-{flow.dport}', gbps, \
                          flow.nic_rtt_mean, f'({flow.nic_rtt_std:>.2f})', \
@@ -176,7 +175,7 @@ def main():
 
     json_data["aggregate throughput"] = aggregate_throughput
 
-    if args.neper:
+    if args.app == "neper":
         print(f'Aggregate Throughput: {aggregate_throughput:.1f} qps')
     else:
         print(f'Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
@@ -594,9 +593,13 @@ if __name__ == "__main__":
     parser.add_argument('--vxlan', '-v', action='store_true')
     parser.add_argument('--native', '-n', action='store_true')
     parser.add_argument('--bitrate', '-b', default="")
-    parser.add_argument('--neper', '-N', action='store_true')
     parser.add_argument('--no-bpftrace', action='store_true')
 
     global args
     args = parser.parse_args()
+
+    if args.app != "iperf" and args.app != "neper":
+        print("Wrong app name.")
+        exit()
+
     main()
