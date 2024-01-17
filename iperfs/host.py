@@ -40,7 +40,7 @@ def main():
     time = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
-    cca = "bbr"
+    cca = "cubic"
 
     global experiment
 
@@ -164,7 +164,7 @@ def main():
                          flow.tcp_rtt_mean, f'({flow.tcp_rtt_std:>.2f})', \
                          diff, f'{(diff/flow.nic_rtt_mean * 100):>6.2f}%'))
         else:
-            print('{0:>1} {1:>10}: {2:>5.3f} {3:>5} {4:>6.1f} {5:>8} {6:>6.1f} {7:>8} {8:>5.1f} {9:>7}'. \
+            print('{0:>1} {1:>10}: {2:>6.2f} {3:>5} {4:>6.1f} {5:>8} {6:>6.1f} {7:>8} {8:>5.1f} {9:>7}'. \
                   format(i, f'{flow.sport}-{flow.dport}', gbps, flow.retransmissions, \
                          flow.nic_rtt_mean, f'({flow.nic_rtt_std:>.2f})', \
                          flow.tcp_rtt_mean, f'({flow.tcp_rtt_std:>.2f})', \
