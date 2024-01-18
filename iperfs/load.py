@@ -52,7 +52,8 @@ def start_neper_servers(num_flows):
     neper_processes = []
     for i in range(0, num_flows):
         port = 5300 + i
-        neper_args = ["./tcp_rr", "--nolog", "-P", str(port)]
+        cpu = 16 + i
+        neper_args = ["numactl", -"C", str(cpu), "./tcp_rr", "--nolog", "-P", str(port), "-l", args.time]
         f = tempfile.TemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f)
         neper_processes.append(p)
