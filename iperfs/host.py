@@ -357,7 +357,7 @@ def run_neper_clients(num_flows, time, server_addr):
     for i in range(0, num_flows):
         port = 5300 + i
         cpu = 16 + i
-        neper_args = ["numactl", -"C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time)]
+        neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, cwd='../../iperfs')
         # p = subprocess.Popen(neper_args, stdout=f)
