@@ -191,7 +191,7 @@ def main():
     plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time)
 
 def initialize_nic():
-    print("Initialize ice driver.", end=" ")
+    print("Initialize ice driver.", end=" ", flush=True)
     subprocess.run(["rmmod", "ice"])
     time.sleep(2)
     subprocess.run(["modprobe", "ice"])
