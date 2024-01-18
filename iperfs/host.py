@@ -44,6 +44,8 @@ def main():
 
     global experiment
 
+    initialize_nic()
+
     if args.vxlan:
         experiment = f"tx-e-f{num_flows}-t{time}-{cca}-{args.app}-0"
     elif args.native:
@@ -188,6 +190,13 @@ def main():
     
     plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time)
 
+def initialize_nic():
+    print("Initialize ice driver.", end=" ")
+    subprocess.run(["rmmod", "ice"])
+    time.sleep(2)
+    subprocess.run(["modprobe", "ice"])
+    print("Done.")
+    
 def start_cpu_utilization():
     f = tempfile.NamedTemporaryFile()
     p = subprocess.Popen(['./cpuload.sh'], stdout=f, cwd='../../iperfs')
