@@ -1,0 +1,517 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-1
+  labels:
+    app: neper-server-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-1
+  template:
+    metadata:
+      labels:
+        app: neper-server-1
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '16', './tcp_rr', '-P', '5300']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-2
+  labels:
+    app: neper-server-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-2
+  template:
+    metadata:
+      labels:
+        app: neper-server-2
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '17', './tcp_rr', '-P', '5301']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-3
+  labels:
+    app: neper-server-3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-3
+  template:
+    metadata:
+      labels:
+        app: neper-server-3
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '18', './tcp_rr', '-P', '5302']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-4
+  labels:
+    app: neper-server-4
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-4
+  template:
+    metadata:
+      labels:
+        app: neper-server-4
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '19', './tcp_rr', '-P', '5303']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-5
+  labels:
+    app: neper-server-5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-5
+  template:
+    metadata:
+      labels:
+        app: neper-server-5
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '20', './tcp_rr', '-P', '5304']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-6
+  labels:
+    app: neper-server-6
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-6
+  template:
+    metadata:
+      labels:
+        app: neper-server-6
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '21', './tcp_rr', '-P', '5305']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-7
+  labels:
+    app: neper-server-7
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-7
+  template:
+    metadata:
+      labels:
+        app: neper-server-7
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '22', './tcp_rr', '-P', '5306']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neper-server-deployment-8
+  labels:
+    app: neper-server-8
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neper-server-8
+  template:
+    metadata:
+      labels:
+        app: neper-server-8
+        node: {CROFFSET_SERVER}
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: neper-server
+        image: sunjaek/neper:affinity
+        command: ['numactl', '-C', '23', './tcp_rr', '-P', '5307']
+        ports:
+        - containerPort: 5001
+          name: server
+      terminationGracePeriodSeconds: 0
+      imagePullSecrets:
+      - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-1
+  labels:
+    app: neper-client-1
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-2
+  labels:
+    app: neper-client-2
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-3
+  labels:
+    app: neper-client-3
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-4
+  labels:
+    app: neper-client-4
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-5
+  labels:
+    app: neper-client-5
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-6
+  labels:
+    app: neper-client-6
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-7
+  labels:
+    app: neper-client-7
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: neper-client-8
+  labels:
+    app: neper-client-8
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: neper-client
+    image: sunjaek/neper:affinity
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+  imagePullSecrets:
+  - name: regcred

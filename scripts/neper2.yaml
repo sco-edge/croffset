@@ -26,7 +26,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5300']
         ports:
         - containerPort: 5001
@@ -65,7 +65,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5301']
         ports:
         - containerPort: 5001
@@ -104,7 +104,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5302']
         ports:
         - containerPort: 5001
@@ -143,7 +143,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5303']
         ports:
         - containerPort: 5001
@@ -182,7 +182,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5304']
         ports:
         - containerPort: 5001
@@ -221,7 +221,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5305']
         ports:
         - containerPort: 5001
@@ -260,7 +260,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5306']
         ports:
         - containerPort: 5001
@@ -299,7 +299,7 @@ spec:
                 - {CROFFSET_SERVER}
       containers:
       - name: neper-server
-        image: sunjaek/neper:init
+        image: sunjaek/neper:affinity
         command: ['./tcp_rr', '-P', '5307']
         ports:
         - containerPort: 5001
@@ -328,7 +328,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -354,7 +354,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -380,7 +380,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -406,7 +406,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -432,7 +432,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -458,7 +458,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -484,7 +484,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:
@@ -510,7 +510,7 @@ spec:
             - {CROFFSET_CLIENT}
   containers:
   - name: neper-client
-    image: sunjaek/neper:init
+    image: sunjaek/neper:affinity
     command: ['/bin/sh', '-c', 'sleep 1d']
   terminationGracePeriodSeconds: 0
   imagePullSecrets:

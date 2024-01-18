@@ -29,7 +29,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5200', '-A', '16']
         ports:
-        - containerPort: 5001
+        - containerPort: 5200
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -66,7 +66,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5201', '-A', '17']
         ports:
-        - containerPort: 5001
+        - containerPort: 5201
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -103,7 +103,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5202', '-A', '18']
         ports:
-        - containerPort: 5001
+        - containerPort: 5202
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -140,7 +140,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5203', '-A', '19']
         ports:
-        - containerPort: 5001
+        - containerPort: 5203
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -177,7 +177,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5204', '-A', '20']
         ports:
-        - containerPort: 5001
+        - containerPort: 5204
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -214,7 +214,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5205', '-A', '21']
         ports:
-        - containerPort: 5001
+        - containerPort: 5205
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -251,7 +251,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5206', '-A', '21']
         ports:
-        - containerPort: 5001
+        - containerPort: 5206
           name: server
       terminationGracePeriodSeconds: 0
 
@@ -288,7 +288,7 @@ spec:
         image: networkstatic/iperf3
         args: ['-s', '-p', '5207', '-A', '21']
         ports:
-        - containerPort: 5001
+        - containerPort: 5207
           name: server
       terminationGracePeriodSeconds: 0
 
