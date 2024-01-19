@@ -199,6 +199,7 @@ def initialize_nic():
     subprocess.run(["modprobe", "ice"])
     time.sleep(1)
     subprocess.run(["./flow_direction_tx_tcp.sh"], stdout=subprocess.DEVNULL)
+    subprocess.run(["./smp_affinity.sh"], stdout=subprocess.DEVNULL)
     print("Done.")
     
 def start_cpu_utilization():
@@ -300,37 +301,43 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
     with open(bpftrace_f.name, 'r') as bpftrace_f:
         for i, flow in enumerate(flows):
             bpftrace_f.seek(0)
-            for line in bpftrace_f.readlines():
-                data = line.split(',')
-                if len(data) != 6:
-                    continue
+            with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
+                for line in bpftrace_f.readlines():
+                    data = line.rstrip().split(',')
+                    if len(data) != 23:
+                    # if len(data) < 6:
+                        continue
 
-                if initial_timestamp_ns == 0:
-                    initial_timestamp_ns = int(data[1])
-                    elapsed = 0
-                else:
-                    elapsed = int(data[1]) - initial_timestamp_ns
-                delivered = int(data[2])
-                rtt_us = int(data[3])
-                port = int(data[5])
+                    if initial_timestamp_ns == 0:
+                        initial_timestamp_ns = int(data[1])
+                        elapsed = 0
+                    else:
+                        elapsed = int(data[1]) - initial_timestamp_ns
+                    delivered = int(data[2])
+                    rtt_us = int(data[3])
+                    port = int(data[5])
+                    ebw = (delivered * 1500 * 8) / rtt_us
 
-                if port == flow.sport:
-                    if not i in bpftrace_map:
-                        bpftrace_map[i] = ([], [], [], [])
-                    
-                    (x, y, z, w) = bpftrace_map[i]
-                    x.append(elapsed)
-                    y.append(rtt_us)
-                    z.append(delivered)
-                    w.append((delivered * 1500 * 8) / rtt_us)
+                    if port == flow.sport:
+                        if not i in bpftrace_map:
+                            bpftrace_map[i] = ([], [], [], [])
+                        
+                        (x, y, z, w) = bpftrace_map[i]
+                        x.append(elapsed)
+                        y.append(rtt_us)
+                        z.append(delivered)
+                        w.append(ebw) # Mbps
+
+                    output = ','.join(data) + ',' + str(ebw) + '\n'
+                    bpftrace_output_per_flow.write(output)
 
             if not bpftrace_map.get(i):
                 print("There is no bpftrace result.")
                 return None
             
-            with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
-                for j, _ in enumerate(bpftrace_map[i][0]):
-                    bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]},{bpftrace_map[i][3][j]}\n')
+            # with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
+            #     for j, _ in enumerate(bpftrace_map[i][0]):
+            #         bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]},{bpftrace_map[i][3][j]}\n')
 
     return bpftrace_map
 
@@ -579,7 +586,6 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time):
         # Estimated bandwidth
         if not args.no_bpftrace:
             (bx, by, bz, bw) = bpftrace_map[i]
-            pp.plot(bx, bw, linewidth=0.1)
 
             figure = pp.figure(figsize=(10, 6))
             xrange = np.array([0, max_time])
@@ -589,6 +595,7 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time):
             pp.xticks(np.linspace(*xrange, 7))
             pp.yticks(np.linspace(*yrange, 11))
     
+            pp.plot(bx, bw, linewidth=0.1)
             name = f'{i}.{experiment}'
             output = f"ewb.{name}.png"
             pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)

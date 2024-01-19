@@ -5,6 +5,7 @@ import argparse
 import os
 import signal
 import sys
+import time
 
 def main():
     num_flows = int(args.flow)
@@ -13,6 +14,8 @@ def main():
     cca = "bbr"
 
     global experiment
+
+    initialize_nic()
 
     if args.vxlan:
         experiment = f"rx-e-f{num_flows}-t{time}-{cca}-{app}-0"
@@ -48,6 +51,16 @@ def main():
     if args.app == "neper":
         end_neper_servers(neper_processes)
 
+def initialize_nic():
+    print("Initialize ice driver.", end=" ", flush=True)
+    subprocess.run(["rmmod", "ice"])
+    time.sleep(1)
+    subprocess.run(["modprobe", "ice"])
+    time.sleep(1)
+    subprocess.run(["./flow_direction_rx_tcp.sh"], stdout=subprocess.DEVNULL)
+    subprocess.run(["./smp_affinity.sh"], stdout=subprocess.DEVNULL)
+    print("Done.")
+    
 def start_neper_servers(num_flows):
     neper_processes = []
     for i in range(0, num_flows):
