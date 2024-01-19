@@ -316,12 +316,13 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
 
                 if port == flow.sport:
                     if not i in bpftrace_map:
-                        bpftrace_map[i] = ([], [], [])
+                        bpftrace_map[i] = ([], [], [], [])
                     
-                    (x, y, z) = bpftrace_map[i]
+                    (x, y, z, w) = bpftrace_map[i]
                     x.append(elapsed)
                     y.append(rtt_us)
                     z.append(delivered)
+                    w.append((delivered * 1500 * 8) / rtt_us)
 
             if not bpftrace_map.get(i):
                 print("There is no bpftrace result.")
@@ -329,7 +330,7 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
             
             with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
                 for j, _ in enumerate(bpftrace_map[i][0]):
-                    bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]}\n')
+                    bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]},{bpftrace_map[i][3][j]}\n')
 
     return bpftrace_map
 
@@ -554,7 +555,7 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time):
         pp.yticks(np.linspace(*yrange, 11))
 
         if not args.no_bpftrace:
-            (bx, by, bz) = bpftrace_map[i]
+            (bx, by, bz, bw) = bpftrace_map[i]
             pp.plot(bx, by, linewidth=0.1)
 
         (ex, ey) = epping_map[i]
@@ -574,6 +575,23 @@ def plot_graphs(epping_map, bpftrace_map, peak, max_time):
             
         output = f"dist.{i}.{experiment}.png"
         pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
+        # Estimated bandwidth
+        if not args.no_bpftrace:
+            (bx, by, bz, bw) = bpftrace_map[i]
+            pp.plot(bx, bw, linewidth=0.1)
+
+            figure = pp.figure(figsize=(10, 6))
+            xrange = np.array([0, max_time])
+            yrange = np.array([0, max(bw)])
+            pp.xlim(xrange)
+            pp.ylim(yrange)
+            pp.xticks(np.linspace(*xrange, 7))
+            pp.yticks(np.linspace(*yrange, 11))
+    
+            name = f'{i}.{experiment}'
+            output = f"ewb.{name}.png"
+            pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
 def str_to_ns(time_str):
     h, m, s = time_str.split(":")

@@ -73,10 +73,10 @@ def start_cpu_utilization():
 def end_cpu_utilization(p, f):
     p.kill()
     with open(f'cpu.{experiment}.out', 'w') as cpu_output:
-        subprocess.run(["../../iperfs/cpu.py", f.name], stdout=cpu_output)
+        subprocess.run(["../../scripts/cpu.py", f.name], stdout=cpu_output)
 
     if not args.silent:
-        subprocess.run(["../../iperfs/cpu.py", "-c", f.name])
+        subprocess.run(["../../scripts/cpu.py", "-c", f.name])
     
 def start_interrupt_count():
     f = tempfile.NamedTemporaryFile()
@@ -89,10 +89,10 @@ def post_process_interrupt_count(old_f):
     subprocess.run(["cat", "/proc/interrupts"], stdout=new_f)
 
     with open(f'int.{experiment}.out', 'w') as interrupt_output:
-        subprocess.run(["../../iperfs/interrupts.py", old_f.name, new_f.name], stdout=interrupt_output)
+        subprocess.run(["../../scripts/interrupts.py", old_f.name, new_f.name], stdout=interrupt_output)
 
     if not args.silent:
-        subprocess.run(["../../iperfs/interrupts.py", old_f.name, new_f.name])
+        subprocess.run(["../../scripts/interrupts.py", old_f.name, new_f.name])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
