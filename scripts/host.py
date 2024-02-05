@@ -116,12 +116,13 @@ def main():
         bpftrace_map = {}
 
     if epping_map == None or bpftrace_map == None:
+        print(f'{experiment} failed.')
         return
     
     json_data = {}
     aggregate_throughput = 0
     peak = 0
-    reduced_time = 6000000000
+    reduced_time = 6_000_000_000
 
     print(f'{experiment}')
     if args.app == "neper":
@@ -149,6 +150,7 @@ def main():
         else:
             if args.app == 'iperf':
                 flow.tcp_rtt_mean = flow.iperf_rtt_mean
+                flow.tcp_rtt_std = 0
             else:
                 flow.tcp_rtt_mean = flow.tcp_rtt_mean
                 flow.tcp_rtt_std = flow.tcp_rtt_std
@@ -190,7 +192,8 @@ def main():
     with open(f'summary.{experiment}.json', 'w') as f:
         json.dump(json_data, f)
     
-    plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time)
+    if not args.no_plot:
+        plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time)
 
 def initialize_nic():
     print("Initialize ice driver.", end=" ", flush=True)
@@ -304,8 +307,8 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
             with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
                 for line in bpftrace_f.readlines():
                     data = line.rstrip().split(',')
-                    if len(data) != 23:
-                    # if len(data) < 6:
+                    if len(data) != 6:
+                        bpftrace_output_per_flow.write(line)
                         continue
 
                     if initial_timestamp_ns == 0:
@@ -640,6 +643,7 @@ if __name__ == "__main__":
     parser.add_argument('--native', '-n', action='store_true')
     parser.add_argument('--bitrate', '-b', default="")
     parser.add_argument('--no-bpftrace', action='store_true')
+    parser.add_argument('--no-plot', action='store_true')
 
     global args
     args = parser.parse_args()
