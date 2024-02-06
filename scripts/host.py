@@ -385,9 +385,9 @@ def run_neper_clients(num_flows, time, server_addr):
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')
         _, err = p.communicate()
-        if not err == None:
-            print(err.decode('utf-8'))
-            return None
+        if err != None and err != b'':
+            print('neper error:', err.decode('utf-8'))
+            return None        
         
         processes.append((p, f))
         flow = NeperFlowStat()
@@ -446,9 +446,9 @@ def run_iperf_clients(num_flows, time, server_addr):
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
         _, err = p.communicate()
-        if not err == None:
-            print(err.decode('utf-8'))
-            return None
+        if err != None and err != b'':
+            print('iperf3 error:', err.decode('utf-8'))
+            return None        
         
         processes.append((p, f))
         flow = FlowStat()
@@ -491,8 +491,8 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
         _, err = p.communicate()
-        if not err == None:
-            print(err.decode('utf-8'))
+        if err != None and err != b'':
+            print('iperf3 error:', err.decode('utf-8'))
             return None
         
         processes.append((p, f))
@@ -543,9 +543,9 @@ def run_k8s_neper_clients(num_flows, time, servers, clients):
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)
         _, err = p.communicate()
-        if not err == None:
-            print(err.decode('utf-8'))
-            return None
+        if err != None and err != b'':
+            print('neper error:', err.decode('utf-8'))
+            return None        
         
         processes.append((p, f))
         flow = NeperFlowStat()
