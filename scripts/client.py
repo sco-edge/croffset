@@ -1,16 +1,19 @@
 #!/usr/bin/python3
 import subprocess
 import tempfile
-import argparse
 import os
+import numpy as np
 import signal
 import sys
 import time
+import re
+import argparse
 
 def main():
     num_flows = int(args.flow)
     time = int(args.time)
     app = args.app
+    interface = "ens801f0"
     cca = "bbr"
 
     global experiment
@@ -162,6 +165,31 @@ def post_process_interrupt_count(old_f):
     if not args.silent:
         subprocess.run(["../../scripts/interrupts.py", old_f.name, new_f.name])
 
+def str_to_ns(time_str):
+    h, m, s = time_str.split(":")
+    int_s, ns = s.split(".")
+    ns = map(lambda t, unit: np.timedelta64(t, unit), [h,m,int_s,ns.ljust(9, '0')],['h','m','s','ns'])
+    return sum(ns)
+
+def parse(f, expr):
+    samples = []
+    initial_timestamp_ns = 0
+    lines = f.readlines()
+    for l in lines:
+        match = expr.search(l)
+        if match == None:
+            continue
+        
+        timestamp_ns = str_to_ns(match.group(1))
+
+        if initial_timestamp_ns == 0:
+            initial_timestamp_ns = timestamp_ns
+            
+        rtt_us = float(match.group(2)) * 1000
+        samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
+
+    return np.array(samples)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--flow', '-f', default=6)
@@ -173,5 +201,10 @@ if __name__ == "__main__":
 
     global args
     args = parser.parse_args()
+
+    if args.app != "iperf" and args.app != "neper":
+        print("Wrong app name.")
+        exit()
+
     main()
     
