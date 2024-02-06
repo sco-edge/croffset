@@ -109,6 +109,11 @@ def main():
 
     end_cpu_utilization(util_p, util_f)
     process_interrupt_count(interrupt_f)
+
+    if flows == None:
+        clear_instrumentation(epping_p, bpftrace_p)
+        return
+
     epping_map = end_epping(epping_p, epping_f, flows)
     if not args.no_bpftrace:
         bpftrace_map = end_bpftrace(bpftrace_p, bpftrace_f, flows)
@@ -234,6 +239,10 @@ def process_interrupt_count(old_f):
 
     if not args.silent:
         subprocess.run(["./interrupts.py", old_f.name, new_f.name], cwd='../../scripts')
+
+def clear_instrumentation(epping_p, bpftrace_p):
+    epping_p.kill()
+    bpftrace_p.kill()
 
 def start_epping(interface):
     # f = tempfile.NamedTemporaryFile()
@@ -374,10 +383,13 @@ def run_neper_clients(num_flows, time, server_addr):
         cpu = 16 + i
         neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(neper_args, stdout=f, cwd='../../scripts')
-        # p = subprocess.Popen(neper_args, stdout=f)
+        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')
+        _, err = p.communicate()
+        if not err == None:
+            print(err.decode('utf-8'))
+            return None
+        
         processes.append((p, f))
-
         flow = NeperFlowStat()
         flow.dport = port
         # print(f'pid: {p.pid}, dport: {port}')
@@ -432,7 +444,12 @@ def run_iperf_clients(num_flows, time, server_addr):
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(iperf_args, stdout=f)
+        p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
+        _, err = p.communicate()
+        if not err == None:
+            print(err.decode('utf-8'))
+            return None
+        
         processes.append((p, f))
         flow = FlowStat()
         flow.dport = port
@@ -472,7 +489,12 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(iperf_args, stdout=f)
+        p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
+        _, err = p.communicate()
+        if not err == None:
+            print(err.decode('utf-8'))
+            return None
+        
         processes.append((p, f))
         flow = FlowStat()
         if args.native:
@@ -519,7 +541,12 @@ def run_k8s_neper_clients(num_flows, time, servers, clients):
         # neper_args = ["kubectl", "exec", clients[i][0], "--", \
         #               "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(neper_args, stdout=f)
+        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)
+        _, err = p.communicate()
+        if not err == None:
+            print(err.decode('utf-8'))
+            return None
+        
         processes.append((p, f))
         flow = NeperFlowStat()
         if args.native:
