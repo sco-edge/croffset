@@ -404,14 +404,13 @@ def run_neper_clients(num_flows, time, server_addr):
 
         flows.append(flow)
 
+    print(f"Start {num_flows} neper flows for {time} seconds.")
+    for (p, f) in processes:
         _, err = p.communicate()
         if err != None and err != b'':
             print('neper error:', err.decode('utf-8'))
             return None
-
-    print(f"Start {num_flows} neper flows for {time} seconds.")
-    for (p, f) in processes:
-        p.wait()
+        
         f.seek(0)
         lines = f.readlines()
         for l in lines:
@@ -444,10 +443,6 @@ def run_iperf_clients(num_flows, time, server_addr):
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
-        _, err = p.communicate()
-        if err != None and err != b'':
-            print('iperf3 error:', err.decode('utf-8'))
-            return None        
         
         processes.append((p, f))
         flow = FlowStat()
@@ -456,7 +451,11 @@ def run_iperf_clients(num_flows, time, server_addr):
 
     print(f"Start {num_flows} flows for {time} seconds.")
     for (p, f) in processes:
-        p.wait()
+        _, err = p.communicate()
+        if err != None and err != b'':
+            print('iperf3 error:', err.decode('utf-8'))
+            return None
+        
         f.seek(0)
         data = json.load(f)
         dport = data["start"]["connected"][0]["remote_port"]
@@ -489,10 +488,6 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
             iperf_args.extend(["-b", args.bitrate])
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
-        _, err = p.communicate()
-        if err != None and err != b'':
-            print('iperf3 error:', err.decode('utf-8'))
-            return None
         
         processes.append((p, f))
         flow = FlowStat()
@@ -508,7 +503,11 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
 
     print(f"Start {num_flows} flows for {time} seconds.")
     for (p, f) in processes:
-        p.wait()
+        _, err = p.communicate()
+        if err != None and err != b'':
+            print('iperf3 error:', err.decode('utf-8'))
+            return None
+        
         f.seek(0)
         data = json.load(f)
         dport = data["start"]["connected"][0]["remote_port"]
@@ -540,11 +539,7 @@ def run_k8s_neper_clients(num_flows, time, servers, clients):
         # neper_args = ["kubectl", "exec", clients[i][0], "--", \
         #               "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)
-        _, err = p.communicate()
-        if err != None and err != b'':
-            print('neper error:', err.decode('utf-8'))
-            return None        
+        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)   
         
         processes.append((p, f))
         flow = NeperFlowStat()
@@ -561,7 +556,11 @@ def run_k8s_neper_clients(num_flows, time, servers, clients):
 
     print(f"Start {num_flows} neper flows for {time} seconds.")
     for (p, f) in processes:
-        p.wait()
+        _, err = p.communicate()
+        if err != None and err != b'':
+            print('neper error:', err.decode('utf-8'))
+            return None
+        
         f.seek(0)
         lines = f.readlines()
         for l in lines:
