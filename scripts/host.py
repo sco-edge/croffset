@@ -383,16 +383,11 @@ def run_neper_clients(num_flows, time, server_addr):
         cpu = 16 + i
         neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time)]
         f = tempfile.NamedTemporaryFile()
-        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')
-        _, err = p.communicate()
-        if err != None and err != b'':
-            print('neper error:', err.decode('utf-8'))
-            return None        
+        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')  
         
         processes.append((p, f))
         flow = NeperFlowStat()
         flow.dport = port
-        # print(f'pid: {p.pid}, dport: {port}')
         netstat = ['netstat', '-tp']
         netstat_f = tempfile.NamedTemporaryFile()
         subprocess.run(netstat, stdout=netstat_f, stderr=subprocess.DEVNULL)
@@ -403,12 +398,16 @@ def run_neper_clients(num_flows, time, server_addr):
                 if not len(tokens) == 7:
                     continue
 
-                # print(tokens)
                 if tokens[-1].endswith('tcp_rr') and tokens[-1].startswith(str(p.pid)) and tokens[4].endswith(str(port)):
                     # print(tokens[3].split(":")[-1])
                     flow.sport = int(tokens[3].split(":")[-1])
 
         flows.append(flow)
+
+        _, err = p.communicate()
+        if err != None and err != b'':
+            print('neper error:', err.decode('utf-8'))
+            return None
 
     print(f"Start {num_flows} neper flows for {time} seconds.")
     for (p, f) in processes:
