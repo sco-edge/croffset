@@ -340,8 +340,8 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
                         z.append(delivered)
                         w.append(ebw) # Mbps
 
-                    output = ','.join(data) + ',' + str(ebw) + '\n'
-                    bpftrace_output_per_flow.write(output)
+                        output = ','.join(data) + ',' + str(ebw) + '\n'
+                        bpftrace_output_per_flow.write(output)
 
             if not bpftrace_map.get(i):
                 print("There is no bpftrace result.")
