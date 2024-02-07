@@ -17,6 +17,8 @@ def main():
     cca = "bbr"
 
     global experiment
+    global iwd
+    iwd = os.getcwd()
 
     initialize_nic()
 
@@ -26,6 +28,18 @@ def main():
         experiment = f"rx-n-f{num_flows}-t{time}-{cca}-{app}-0"
     else:
         experiment = f"rx-h-f{num_flows}-t{time}-{cca}-{app}-0"
+
+    if not os.path.exists(os.path.join(iwd, '..', 'data')):
+        os.mkdir(os.path.join(iwd, '..', 'data'))
+    os.chdir(os.path.join(iwd, '..', 'data'))
+
+    while os.path.exists(os.path.join(iwd, '..', 'data', experiment)):
+        (remained, last) = experiment.rsplit("-", 1)
+        trial = int(last) + 1
+        experiment = f"{remained}-{trial}"
+
+    os.mkdir(os.path.join(iwd, '..', 'data', experiment))
+    os.chdir(os.path.join(iwd, '..', 'data', experiment))
 
     if args.app == "neper":
         neper_processes = start_neper_servers(num_flows)
@@ -37,21 +51,9 @@ def main():
     print("Press \'Enter\' to end the recording.")
     line = sys.stdin.readline()
 
-    if not os.path.exists("../data"):
-        os.mkdir("../data")
-    os.chdir("../data")
-    
-    while os.path.exists(experiment):
-        (remained, last) = experiment.rsplit("-", 1)
-        trial = int(last) + 1
-        experiment = f"{remained}-{trial}"
-
-    os.mkdir(experiment)
-    os.chdir(experiment)
-
     end_cpu_utilization(util_p, util_f)
     post_process_interrupt_count(interrupt_f)
-    epping_map = end_epping(epping_p, epping_f, flows)
+    epping_map = end_client_epping(epping_p, epping_f, num_flows)
 
     if args.app == "neper":
         end_neper_servers(neper_processes)
@@ -62,8 +64,8 @@ def initialize_nic():
     time.sleep(1)
     subprocess.run(["modprobe", "ice"])
     time.sleep(1)
-    subprocess.run(["./flow_direction_rx_tcp.sh"], stdout=subprocess.DEVNULL)
-    subprocess.run(["./smp_affinity.sh"], stdout=subprocess.DEVNULL)
+    subprocess.run([os.path.join(iwd, 'flow_direction_rx_tcp.sh')], stdout=subprocess.DEVNULL)
+    subprocess.run([os.path.join(iwd, 'smp_affinity.sh')], stdout=subprocess.DEVNULL)
     print("Done.")
     
 def start_neper_servers(num_flows):
@@ -71,7 +73,7 @@ def start_neper_servers(num_flows):
     for i in range(0, num_flows):
         port = 5300 + i
         cpu = 16 + i
-        neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-P", str(port), "-l", args.time]
+        neper_args = ["numactl", "-C", str(cpu), os.path.join(iwd, 'tcp_rr'), "--nolog", "-P", str(port), "-l", args.time]
         f = tempfile.TemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f)
         neper_processes.append(p)
@@ -83,42 +85,40 @@ def end_neper_servers(neper_processes):
         os.kill(process.pid, signal.SIGTERM)
 
 def start_epping(interface):
-    # f = tempfile.NamedTemporaryFile()
     with open(f'raw.epping.{experiment}.out', 'w') as f:
         if args.vxlan:
-            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native", "-V"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native", "-V"], stdout=f, cwd=os.path.join(iwd, '..'))
         else:
-            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native"], stdout=f, cwd=os.path.join(iwd, '..'))
 
     time.sleep(2)
     return (p, f)
 
-def end_epping(epping_p, epping_f, flows):
+def end_client_epping(epping_p, epping_f, num_flows):
     epping_p.kill()
 
     epping_map = {}
 
+    dports = [5200, 5201, 5202, 5203, 5204, 5205, 5206, 5207]
+
     with open(epping_f.name, 'r') as epping_f:
-        for (i, flow) in enumerate(flows):
+        for i in range(0, num_flows):
             epping_f.seek(0)
             if args.vxlan:
-                print(f"{i}: UDP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
-                target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                print(f"{i}: UDP 192.168.2.102:*+192.168.2.103:{str(dports[i])}")
+                target = "192.168.2.103" + ":" + str(dports[i])
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s192.168.2.102:.*\+" + re.escape(target) + r"$")
                 samples = parse(epping_f, expr)
-                # samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
-            elif args.native:
-                print(f"{i}: TCP {str(flow.daddr)}:{str(flow.dport)}+{str(flow.saddr)}:{str(flow.sport)}")
-                target = str(flow.daddr) + ":" + str(flow.dport) + "+" + str(flow.saddr) + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
-                samples = parse(epping_f, expr)
-                # samples = parse(epping_f, "TCP", ".*?", str(flow.dport), "192.168.2.102", str(flow.sport))
+            # elif args.native:
+            #     print(f"{i}: TCP {str(flow.daddr)}:{str(flow.dport)}+{str(flow.saddr)}:{str(flow.sport)}")
+            #     target = str(flow.daddr) + ":" + str(flow.dport) + "+" + str(flow.saddr) + ":" + str(flow.sport)
+            #     expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
+            #     samples = parse(epping_f, expr)
             else:
-                print(f"{i}: TCP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
-                target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                print(f"{i}: TCP 192.168.2.102:*+192.168.2.103:{str(dports[i])}")
+                target = "192.168.2.103" + ":" + str(dports[i])
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s192.168.2.102:.*\+" + re.escape(target) + r"$")
                 samples = parse(epping_f, expr)
-                # samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
 
             if len(samples) == 0:
                 print("There is no epping samples.")
@@ -137,17 +137,17 @@ def end_epping(epping_p, epping_f, flows):
 
 def start_cpu_utilization():
     f = tempfile.NamedTemporaryFile()
-    p = subprocess.Popen(["./cpuload.sh"], stdout=f)
+    p = subprocess.Popen([os.path.join(iwd, 'cpuload.sh')], stdout=f)
 
     return (p, f)
 
 def end_cpu_utilization(p, f):
     p.kill()
     with open(f'cpu.{experiment}.out', 'w') as cpu_output:
-        subprocess.run(["../../scripts/cpu.py", f.name], stdout=cpu_output)
+        subprocess.run([os.path.join(iwd, 'cpu.py'), f.name], stdout=cpu_output)
 
     if not args.silent:
-        subprocess.run(["../../scripts/cpu.py", "-c", f.name])
+        subprocess.run([os.path.join(iwd, 'cpu.py'), "-c", f.name])
     
 def start_interrupt_count():
     f = tempfile.NamedTemporaryFile()
@@ -160,10 +160,10 @@ def post_process_interrupt_count(old_f):
     subprocess.run(["cat", "/proc/interrupts"], stdout=new_f)
 
     with open(f'int.{experiment}.out', 'w') as interrupt_output:
-        subprocess.run(["../../scripts/interrupts.py", old_f.name, new_f.name], stdout=interrupt_output)
+        subprocess.run([os.path.join(iwd, 'interrupts.py'), old_f.name, new_f.name], stdout=interrupt_output)
 
     if not args.silent:
-        subprocess.run(["../../scripts/interrupts.py", old_f.name, new_f.name])
+        subprocess.run([os.path.join(iwd, 'interrupts.py'), old_f.name, new_f.name])
 
 def str_to_ns(time_str):
     h, m, s = time_str.split(":")
