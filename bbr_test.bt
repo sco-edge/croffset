@@ -26,23 +26,6 @@ kprobe:bbr_update_model
 	$bbr = $inet_csk->icsk_ca_priv;
 	$port = $sock->__sk_common.skc_num;
 	$rs = (struct rate_sample *)arg1;
-	
-	$min_rtt_us = $bbr[0] & 0x00000000FFFFFFFF;
-	$mode = $bbr[7] & 0x0000000000000007;
-	$prev_ca_state = ($bbr[7] & 0x0000000000000038) >> 3;
-	$packet_conservation = ($bbr[7] & 0x0000000000000040) >> 6;
-	$round_start = ($bbr[7] & 0x0000000000000080) >> 7;
-	$idle_restart = ($bbr[7] & 0x0000000000000100) >> 8;
-	$probe_rtt_round_done = ($bbr[7] & 0x0000000000000200) >> 9;
-	$lt_is_sampling = ($bbr[7] & 0x0000000000800000) >> 23;
-	$lt_rtt_cnt = ($bbr[7] & 0x000000007F000000) >> 24;
-	$lt_use_bw = ($bbr[7] & 0x0000000080000000) >> 31;
-	$pacing_gain = ($bbr[9] & 0x000003FF00000000) >> 32;
-	$cwnd_gain = ($bbr[9] & 0x000FFC0000000000) >> 42;
-	$full_bw_reached = ($bbr[9] & 0x0010000000000000) >> 52;
-	$full_bw_cnt = ($bbr[9] & 0x0060000000000000) >> 53;
-	$cycle_idx = ($bbr[9] & 0x0380000000000000) >> 55;
-	$full_bw = ($bbr[10] & 0xFFFFFFFF00000000) >> 32;
 
 	//if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
 	//	printf("0x%llx,%lld,%ld,%ld,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited);
@@ -53,7 +36,8 @@ kprobe:bbr_update_model
 	//}
 	
 	//printf("0x%llx,%lld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port, $min_rtt_us, $mode, $probe_rtt_round_done, $pacing_gain, $cwnd_gain, $full_bw_reached, $full_bw_cnt, $cycle_idx, $full_bw);
-	printf("0x%llx,%lld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port, $min_rtt_us, $mode, $prev_ca_state, $packet_conservation, $round_start, $idle_restart, $probe_rtt_round_done, $lt_is_sampling, $lt_rtt_cnt, $lt_use_bw, $pacing_gain, $cwnd_gain, $full_bw_reached, $full_bw_cnt, $cycle_idx, $full_bw, $rs->losses);
+	//printf("0x%llx,%lld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port, $min_rtt_us, $mode, $prev_ca_state, $packet_conservation, $round_start, $idle_restart, $probe_rtt_round_done, $lt_is_sampling, $lt_rtt_cnt, $lt_use_bw, $pacing_gain, $cwnd_gain, $full_bw_reached, $full_bw_cnt, $cycle_idx, $full_bw, $rs->losses);
+	printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
 	
 	//if ($rs->delivered != -1 && $rs->interval_us != -1) {
 	//	printf("0x%llx,%lld,%ld,%ld,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited);

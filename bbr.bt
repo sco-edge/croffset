@@ -3,43 +3,12 @@
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 
-BEGIN
-{
-	//printf("sock,time_us,delivered,interval_us,is_app_limited\n");
-}
-
-kprobe:bbr_undo_cwnd
-{
-	printf("bbr_undo_cwnd\n");
-}
-
-kprobe:bbr_set_state
-{
-	$new_state = arg1;
-	printf("bbr_set_state: %d\n", $new_state);
-}
-
 kprobe:bbr_update_model
 {
 	$sock = (struct sock *)arg0;
 	$inet_csk = (struct inet_connection_sock *)$sock;
-	$bbr = $inet_csk->icsk_ca_priv;
 	$port = $sock->__sk_common.skc_num;
 	$rs = (struct rate_sample *)arg1;
 
-	//if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
-	//	printf("0x%llx,%lld,%ld,%ld,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited);
-	//}
-	
-	//if ($rs->is_app_limited == 0 && $rs->delivered != -1 && $rs->interval_us != -1) {
-	//	printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
-	//}
-	
-	//printf("0x%llx,%lld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port, $min_rtt_us, $mode, $probe_rtt_round_done, $pacing_gain, $cwnd_gain, $full_bw_reached, $full_bw_cnt, $cycle_idx, $full_bw);
-	//printf("0x%llx,%lld,%ld,%ld,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port, $min_rtt_us, $mode, $prev_ca_state, $packet_conservation, $round_start, $idle_restart, $probe_rtt_round_done, $lt_is_sampling, $lt_rtt_cnt, $lt_use_bw, $pacing_gain, $cwnd_gain, $full_bw_reached, $full_bw_cnt, $cycle_idx, $full_bw, $rs->losses);
 	printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
-	
-	//if ($rs->delivered != -1 && $rs->interval_us != -1) {
-	//	printf("0x%llx,%lld,%ld,%ld,%d\n", arg0, elapsed / 1000, $rs->delivered, $rs->interval_us, $rs->is_app_limited);
-	//}
 }
