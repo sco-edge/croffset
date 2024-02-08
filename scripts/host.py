@@ -37,7 +37,7 @@ class NeperFlowStat:
 
 def main():
     num_flows = int(args.flow)
-    time = int(args.time)
+    duration = int(args.time)
     server_addr = "192.168.2.103"
     interface = "ens801f0"
     cca = "bbr"
@@ -47,11 +47,11 @@ def main():
     initialize_nic()
 
     if args.vxlan:
-        experiment = f"tx-e-f{num_flows}-t{time}-{cca}-{args.app}-0"
+        experiment = f"tx-e-f{num_flows}-t{duration}-{cca}-{args.app}-0"
     elif args.native:
-        experiment = f"tx-n-f{num_flows}-t{time}-{cca}-{args.app}-0"
+        experiment = f"tx-n-f{num_flows}-t{duration}-{cca}-{args.app}-0"
     else:
-        experiment = f"tx-h-f{num_flows}-t{time}-{cca}-{args.app}-0"
+        experiment = f"tx-h-f{num_flows}-t{duration}-{cca}-{args.app}-0"
 
     os.chdir("..")
     if not os.path.exists("data"):
@@ -73,6 +73,8 @@ def main():
     if not args.no_bpftrace:
         (bpftrace_p, bpftrace_f) = start_bpftrace()
 
+    time.sleep(2)
+
     # Using neper
     if args.app == "neper":
         if args.vxlan or args.native:
@@ -87,9 +89,9 @@ def main():
                     bpftrace_p.kill()
                 print('Check that kubeconfig is properly set.')
                 exit(-1)
-            flows = run_k8s_neper_clients(num_flows, time, servers, clients)
+            flows = run_k8s_neper_clients(num_flows, duration, servers, clients)
         else:
-            flows = run_neper_clients(num_flows, time, server_addr)
+            flows = run_neper_clients(num_flows, duration, server_addr)
     # Using iperf
     else:
         if args.vxlan or args.native:
@@ -103,9 +105,9 @@ def main():
                     bpftrace_p.kill()
                 print('Check that kubeconfig is properly set.')
                 exit(-1)
-            flows = run_k8s_iperf_clients(num_flows, time, servers, clients)
+            flows = run_k8s_iperf_clients(num_flows, duration, servers, clients)
         else:    
-            flows = run_iperf_clients(num_flows, time, server_addr)
+            flows = run_iperf_clients(num_flows, duration, server_addr)
 
     end_cpu_utilization(util_p, util_f)
     process_interrupt_count(interrupt_f)
@@ -127,7 +129,8 @@ def main():
     json_data = {}
     aggregate_throughput = 0
     peak = 0
-    reduced_time = 6_000_000_000
+    # reduced_time = 60_000_000_000
+    reduced_time = duration * 1_000_000_000
 
     print(f'{experiment}')
     if args.app == "neper":
@@ -149,9 +152,9 @@ def main():
             if peak_per_flow >= peak:
                 peak = peak_per_flow
             
-            max_time_per_flow = min(np.max(bpftrace_map[i][0]), np.max(epping_map[i][0]))
-            if max_time_per_flow <= reduced_time:
-                reduced_time = max_time_per_flow
+            # max_time_per_flow = min(np.max(bpftrace_map[i][0]), np.max(epping_map[i][0]))
+            # if max_time_per_flow <= reduced_time:
+            #     reduced_time = max_time_per_flow
         else:
             if args.app == 'iperf':
                 flow.tcp_rtt_mean = flow.iperf_rtt_mean
@@ -164,9 +167,9 @@ def main():
             if peak_per_flow >= peak:
                 peak = peak_per_flow
             
-            max_time_per_flow = np.max(epping_map[i][0])
-            if max_time_per_flow <= reduced_time:
-                reduced_time = max_time_per_flow
+            # max_time_per_flow = np.max(epping_map[i][0])
+            # if max_time_per_flow <= reduced_time:
+            #     reduced_time = max_time_per_flow
 
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
@@ -203,9 +206,9 @@ def main():
 def initialize_nic():
     print("Initialize ice driver.", end=" ", flush=True)
     subprocess.run(["rmmod", "ice"])
-    time.sleep(1)
+    time.sleep(0.5)
     subprocess.run(["modprobe", "ice"])
-    time.sleep(1)
+    time.sleep(0.5)
     subprocess.run(["./flow_direction_tx_tcp.sh"], stdout=subprocess.DEVNULL)
     subprocess.run(["./smp_affinity.sh"], stdout=subprocess.DEVNULL)
     print("Done.")
@@ -374,14 +377,14 @@ def get_k8s_clients(target):
 
     return clients
 
-def run_neper_clients(num_flows, time, server_addr):
+def run_neper_clients(num_flows, duration, server_addr):
     flows = []
     processes = []
 
     for i in range(0, num_flows):
         port = 5300 + i
         cpu = 16 + i
-        neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(time)]
+        neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(duration)]
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')  
         
@@ -404,7 +407,7 @@ def run_neper_clients(num_flows, time, server_addr):
 
         flows.append(flow)
 
-    print(f"Start {num_flows} neper flows for {time} seconds.")
+    print(f"Start {num_flows} neper flows for {duration} seconds.")
     for (p, f) in processes:
         _, err = p.communicate()
         if err != None and err != b'':
@@ -431,17 +434,18 @@ def run_neper_clients(num_flows, time, server_addr):
 
     return flows
 
-def run_iperf_clients(num_flows, time, server_addr):
+def run_iperf_clients(num_flows, duration, server_addr):
     flows = []
     processes = []
 
     for i in range(0, num_flows):
         port = 5200 + i
         cpu = 16 + i
-        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(time), "-J", "-A", str(cpu)]
+        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(duration), "-J", "-A", str(cpu)]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
-        f = tempfile.NamedTemporaryFile()
+        # f = tempfile.NamedTemporaryFile()
+        f = open(f'raw.iperf.{experiment}.out', 'w')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
         
         processes.append((p, f))
@@ -449,7 +453,7 @@ def run_iperf_clients(num_flows, time, server_addr):
         flow.dport = port
         flows.append(flow)
 
-    print(f"Start {num_flows} flows for {time} seconds.")
+    print(f"Start {num_flows} flows for {duration} seconds.")
     for (p, f) in processes:
         _, err = p.communicate()
         if err != None and err != b'':
@@ -474,7 +478,7 @@ def run_iperf_clients(num_flows, time, server_addr):
 
     return flows
 
-def run_k8s_iperf_clients(num_flows, time, servers, clients):
+def run_k8s_iperf_clients(num_flows, duration, servers, clients):
     flows = []
     processes = []
     ports = [5200, 5201, 5202, 5203, 5204, 5205, 5206, 5207]
@@ -483,10 +487,11 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
 
     for i in range(0, num_flows):
         iperf_args = ["kubectl", "exec", clients[i][0], "--", \
-                      "iperf3", "-c", servers[i][1], "-p", str(ports[i]), "--cport", str(sports[i]), "-t", str(time), "-J", "-A", str(cpus[i])]
+                      "iperf3", "-c", servers[i][1], "-p", str(ports[i]), "--cport", str(sports[i]), "-t", str(duration), "-J", "-A", str(cpus[i])]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
-        f = tempfile.NamedTemporaryFile()
+        # f = tempfile.NamedTemporaryFile()
+        f = open(f'raw.iperf.{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
         
         processes.append((p, f))
@@ -501,7 +506,7 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
         flow.dport = ports[i]
         flows.append(flow)
 
-    print(f"Start {num_flows} flows for {time} seconds.")
+    print(f"Start {num_flows} flows for {duration} seconds.")
     for (p, f) in processes:
         _, err = p.communicate()
         if err != None and err != b'':
@@ -526,7 +531,7 @@ def run_k8s_iperf_clients(num_flows, time, servers, clients):
 
     return flows
 
-def run_k8s_neper_clients(num_flows, time, servers, clients):
+def run_k8s_neper_clients(num_flows, duration, servers, clients):
     flows = []
     processes = []
     ports = [5300, 5301, 5302, 5303, 5304, 5305, 5306, 5307]
@@ -535,9 +540,9 @@ def run_k8s_neper_clients(num_flows, time, servers, clients):
 
     for i in range(0, num_flows):
         neper_args = ["kubectl", "exec", clients[i][0], "--", "numactl", "-C", str(cpus[i]), \
-                      "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
+                      "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(duration)]
         # neper_args = ["kubectl", "exec", clients[i][0], "--", \
-        #               "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(time)]
+        #               "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(duration)]
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)   
         
@@ -554,7 +559,7 @@ def run_k8s_neper_clients(num_flows, time, servers, clients):
         flow.dport = ports[i]
         flows.append(flow)
 
-    print(f"Start {num_flows} neper flows for {time} seconds.")
+    print(f"Start {num_flows} neper flows for {duration} seconds.")
     for (p, f) in processes:
         _, err = p.communicate()
         if err != None and err != b'':
