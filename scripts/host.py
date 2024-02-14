@@ -445,7 +445,7 @@ def run_iperf_clients(num_flows, duration, server_addr):
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         # f = tempfile.NamedTemporaryFile()
-        f = open(f'raw.iperf.{experiment}.out', 'w')
+        f = open(f'raw.iperf.{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
         
         processes.append((p, f))
