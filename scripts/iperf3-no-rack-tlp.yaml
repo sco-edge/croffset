@@ -1,0 +1,609 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-1
+  labels:
+    app: iperf-server-1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-1
+  template:
+    metadata:
+      labels:
+        app: iperf-server-1
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5200', '-A', '16']
+        ports:
+        - containerPort: 5200
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-2
+  labels:
+    app: iperf-server-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-2
+  template:
+    metadata:
+      labels:
+        app: iperf-server-2
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5201', '-A', '17']
+        ports:
+        - containerPort: 5201
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-3
+  labels:
+    app: iperf-server-3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-3
+  template:
+    metadata:
+      labels:
+        app: iperf-server-3
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5202', '-A', '18']
+        ports:
+        - containerPort: 5202
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-4
+  labels:
+    app: iperf-server-4
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-4
+  template:
+    metadata:
+      labels:
+        app: iperf-server-4
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5203', '-A', '19']
+        ports:
+        - containerPort: 5203
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-5
+  labels:
+    app: iperf-server-5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-5
+  template:
+    metadata:
+      labels:
+        app: iperf-server-5
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5204', '-A', '20']
+        ports:
+        - containerPort: 5204
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-6
+  labels:
+    app: iperf-server-6
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-6
+  template:
+    metadata:
+      labels:
+        app: iperf-server-6
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5205', '-A', '21']
+        ports:
+        - containerPort: 5205
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-7
+  labels:
+    app: iperf-server-7
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-7
+  template:
+    metadata:
+      labels:
+        app: iperf-server-7
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5206', '-A', '21']
+        ports:
+        - containerPort: 5206
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf-server-deployment-8
+  labels:
+    app: iperf-server-8
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf-server-8
+  template:
+    metadata:
+      labels:
+        app: iperf-server-8
+        node: {CROFFSET_SERVER}
+    spec:
+      securityContext:
+        sysctls:
+        - name: net.ipv4.tcp_recovery
+          value: "0"
+        - name: net.ipv4.tcp_early_retrans
+          value: "0"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                - {CROFFSET_SERVER}
+      containers:
+      - name: iperf3-server
+        image: networkstatic/iperf3
+        args: ['-s', '-p', '5207', '-A', '21']
+        ports:
+        - containerPort: 5207
+          name: server
+      terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-1
+  labels:
+    app: iperf-client-1
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-2
+  labels:
+    app: iperf-client-2
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-3
+  labels:
+    app: iperf-client-3
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-4
+  labels:
+    app: iperf-client-4
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-5
+  labels:
+    app: iperf-client-5
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-6
+  labels:
+    app: iperf-client-6
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-7
+  labels:
+    app: iperf-client-7
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: iperf-client-8
+  labels:
+    app: iperf-client-8
+spec:
+  securityContext:
+    sysctls:
+    - name: net.ipv4.tcp_recovery
+      value: "0"
+    - name: net.ipv4.tcp_early_retrans
+      value: "0"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - {CROFFSET_CLIENT}
+  tolerations:
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  containers:
+  - name: iperf-client
+    image: networkstatic/iperf3
+    command: ['/bin/sh', '-c', 'sleep 1d']
+  terminationGracePeriodSeconds: 0
