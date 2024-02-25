@@ -63,7 +63,7 @@ def main():
     os.chdir(experiment)
 
     (util_p, util_f) = start_cpu_utilization()
-    interrupt_f = get_interrupt_count()
+    (interrupt_f, softirqs_f) = get_interrupt_count()
     (vxlan_epping_p, vxlan_epping_f) = start_vxlan_epping(interface)
     (host_epping_p, host_epping_f) = start_host_epping(interface)
 
@@ -104,7 +104,7 @@ def main():
         (flows, container_flows) = run_combined_iperf_clients(num_flows, num_container_flows, duration, server_addr, servers, clients)
 
     end_cpu_utilization(util_p, util_f)
-    process_interrupt_count(interrupt_f)
+    process_interrupt_count(interrupt_f, softirqs_f)
 
     if flows == None or container_flows == None:
         vxlan_epping_p.kill()
@@ -126,6 +126,7 @@ def main():
     
     json_data = {}
     aggregate_throughput = 0
+    throughputs = []
     peak = 0
     # reduced_time = 60_000_000_000
     reduced_time = duration * 1_000_000_000
@@ -161,6 +162,7 @@ def main():
             if peak_per_flow >= peak:
                 peak = peak_per_flow
 
+        throughputs.append(flow.throughput)
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
 
@@ -215,6 +217,7 @@ def main():
             if peak_per_flow >= peak:
                 peak = peak_per_flow
 
+        throughputs.append(flow.throughput)
         gbps = flow.throughput
         diff = flow.tcp_rtt_mean - flow.nic_rtt_mean
 
@@ -240,6 +243,7 @@ def main():
         print(f'VXLAN Aggregate Throughput: {aggregate_throughput:.1f} qps')
     else:
         print(f'VXLAN Aggregate Throughput: {aggregate_throughput:.1f} Gbps')
+    print(f'Jain\'s Fairness Index: {jain_index(throughputs):.4f}')
 
     with open(f'summary.c.{experiment}.json', 'w') as f:
         json.dump(json_data, f)
@@ -272,20 +276,28 @@ def end_cpu_utilization(p, f):
         subprocess.run(["./cpu.py", "-c", f.name], cwd='../../scripts')
     
 def get_interrupt_count():
-    f = tempfile.NamedTemporaryFile()
-    subprocess.run(["cat", "/proc/interrupts"], stdout=f)
+    interrupts_f = tempfile.NamedTemporaryFile()
+    softirqs_f = tempfile.NamedTemporaryFile()
+    subprocess.run(["cat", "/proc/interrupts"], stdout=interrupts_f)
+    subprocess.run(["cat", "/proc/softirqs"], stdout=softirqs_f)
 
-    return f
+    return interrupts_f, softirqs_f
 
-def process_interrupt_count(old_f):
-    new_f = tempfile.NamedTemporaryFile()
-    subprocess.run(["cat", "/proc/interrupts"], stdout=new_f)
+def process_interrupt_count(old_interrupts_f, old_softirqs_f):
+    new_interrupts_f = tempfile.NamedTemporaryFile()
+    new_softirqs_f = tempfile.NamedTemporaryFile()
+    subprocess.run(["cat", "/proc/interrupts"], stdout=new_interrupts_f)
+    subprocess.run(["cat", "/proc/softirqs"], stdout=new_softirqs_f)
 
-    with open(f'int.{experiment}.out', 'w') as interrupt_output:
-        subprocess.run(["./interrupts.py", old_f.name, new_f.name], stdout=interrupt_output, cwd='../../scripts')
+    with open(f'interrupts.{experiment}.out', 'w') as interrupts_output:
+        subprocess.run(["./interrupts.py", old_interrupts_f.name, new_interrupts_f.name], stdout=interrupts_output, cwd='../../scripts')
+
+    with open(f'softirqs.{experiment}.out', 'w') as softirqs_output:
+        subprocess.run(["./softirqs.py", old_softirqs_f.name, new_softirqs_f.name], stdout=softirqs_output, cwd='../../scripts')
 
     if not args.silent:
-        subprocess.run(["./interrupts.py", old_f.name, new_f.name], cwd='../../scripts')
+        subprocess.run(["./interrupts.py", old_interrupts_f.name, new_interrupts_f.name], cwd='../../scripts')
+        subprocess.run(["./softirqs.py", old_softirqs_f.name, new_softirqs_f.name], cwd='../../scripts')
 
 def start_vxlan_epping(interface):
     # f = tempfile.NamedTemporaryFile()
@@ -543,9 +555,10 @@ def run_combined_iperf_clients(num_flows, num_container_flows, duration, server_
 
     # Host flows
     for i in range(0, num_flows):
-        port = 5200 + i
+        port = 5204 + i
         cpu = 16 + i
         iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(duration), "-J", "-A", str(cpu)]
+        # iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", "20", "-J", "-A", str(cpu)]
         # f = tempfile.NamedTemporaryFile()
         f = open(f'raw.iperf.h.{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
@@ -696,6 +709,15 @@ def find_flow(flows, dport):
     for i, flow in enumerate(flows):
         if flow.dport == dport:
             return i, flow
+
+def jain_index(data):
+    squared_sum = 0
+    sum = 0
+    for d in data:
+        sum += d
+        squared_sum += d**2
+
+    return sum**2 / (len(data) * squared_sum)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
