@@ -63,7 +63,7 @@ def main():
     os.chdir(experiment)
 
     (util_p, util_f) = start_cpu_utilization()
-    (interrupt_f, softirqs_f) = get_interrupt_count()
+    (interrupts_f, softirqs_f) = get_interrupt_count()
     (vxlan_epping_p, vxlan_epping_f) = start_vxlan_epping(interface)
     (host_epping_p, host_epping_f) = start_host_epping(interface)
 
@@ -104,7 +104,7 @@ def main():
         (flows, container_flows) = run_combined_iperf_clients(num_flows, num_container_flows, duration, server_addr, servers, clients)
 
     end_cpu_utilization(util_p, util_f)
-    process_interrupt_count(interrupt_f, softirqs_f)
+    process_interrupt_count(interrupts_f, softirqs_f)
 
     if flows == None or container_flows == None:
         vxlan_epping_p.kill()
@@ -468,9 +468,11 @@ def run_combined_neper_clients(num_flows, num_container_flows, duration, server_
     processes = []
 
     for i in range(0, num_flows):
-        port = 5300 + i
+        port = 5304 + i
+        cport = 43004 + i
         cpu = 16 + i
-        neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, "-P", str(port), "-l", str(duration)]
+        neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, \
+                      "-l", str(duration), "--source-port", str(cport), "-P", str(port)]
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')  
         
@@ -494,12 +496,13 @@ def run_combined_neper_clients(num_flows, num_container_flows, duration, server_
         flows.append(flow)
 
     ports = [5300, 5301, 5302, 5303, 5304, 5305, 5306, 5307]
-    sports = [42000, 42001, 42002, 42003, 42004, 42005, 42006, 42007]
+    sports = [43000, 43001, 43002, 43003, 43004, 43005, 43006, 43007]
     cpus = [20, 21, 22, 23]
 
     for i in range(0, num_container_flows):
         neper_args = ["kubectl", "exec", clients[i][0], "--", "numactl", "-C", str(cpus[i]), \
-                      "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(duration)]
+                      "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "-l", str(duration), \
+                      "--source-port", str(sports[i]), "-P", str(ports[i])]
         # neper_args = ["kubectl", "exec", clients[i][0], "--", \
         #               "./tcp_rr", "--nolog", "-c", "-H", servers[i][1], "--source-port", str(sports[i]), "-P", str(ports[i]), "-l", str(duration)]
         f = tempfile.NamedTemporaryFile()
@@ -556,8 +559,9 @@ def run_combined_iperf_clients(num_flows, num_container_flows, duration, server_
     # Host flows
     for i in range(0, num_flows):
         port = 5204 + i
+        cport = 42004 + i
         cpu = 16 + i
-        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(duration), "-J", "-A", str(cpu)]
+        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), "-t", str(duration), "-J", "-A", str(cpu)]
         # iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", "20", "-J", "-A", str(cpu)]
         # f = tempfile.NamedTemporaryFile()
         f = open(f'raw.iperf.h.{i}.{experiment}.out', 'w+b')

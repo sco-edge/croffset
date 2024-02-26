@@ -451,8 +451,9 @@ def run_iperf_clients(num_flows, duration, server_addr):
 
     for i in range(0, num_flows):
         port = 5200 + i
+        cport = 42000 + i
         cpu = 16 + i
-        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "-t", str(duration), "-J", "-A", str(cpu)]
+        iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), "-t", str(duration), "-J", "-A", str(cpu)]
         if not args.bitrate == "":
             iperf_args.extend(["-b", args.bitrate])
         # f = tempfile.NamedTemporaryFile()
