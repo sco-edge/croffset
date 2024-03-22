@@ -81,8 +81,7 @@ def main():
             servers = get_k8s_servers('neper')
             clients = get_k8s_clients('neper')
 
-            # print(f"Debug: {servers}, {clients}")
-            if len(servers) == 0 or len(clients) == 0:
+            if len(servers[0]) == 0 or len(clients[0]) == 0:
                 epping_p.kill()
                 util_p.kill()
                 if not args.no_bpftrace:
@@ -118,6 +117,7 @@ def main():
 
     epping_map = end_epping(epping_p, epping_f, flows)
     if not args.no_bpftrace:
+        # (bpftrace_map, loss_map) = end_bpftrace_stat(bpftrace_p, bpftrace_f, flows)
         bpftrace_map = end_bpftrace(bpftrace_p, bpftrace_f, flows)
     else:
         bpftrace_map = {}
@@ -205,6 +205,7 @@ def main():
     
     if not args.no_plot:
         plot_graphs(epping_map, bpftrace_map, peak_per_flow, reduced_time)
+        # plot_graphs_stat(epping_map, bpftrace_map, loss_map, peak_per_flow, reduced_time)
 
 def initialize_nic():
     print("Initialize ice driver.", end=" ", flush=True)
@@ -262,9 +263,9 @@ def start_epping(interface):
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.epping.{experiment}.out', 'w') as f:
         if args.vxlan:
-            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native", "-V"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-V"], stdout=f, cwd='../..')
         else:
-            p = subprocess.Popen(["./pping", "-i", interface, "-x", "native"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native"], stdout=f, cwd='../..')
 
     time.sleep(2)
     return (p, f)
@@ -315,8 +316,79 @@ def start_bpftrace():
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.bpftrace.{experiment}.out', 'w') as f:
         p = subprocess.Popen(["./bbr.bt"], stdout=f, cwd='../..')
+        # p = subprocess.Popen(["./stat.bt"], stdout=f, cwd='../..')
 
     return (p, f)
+
+def end_bpftrace_stat(bpftrace_p, bpftrace_f, flows):
+    bpftrace_p.kill()
+
+    initial_timestamp_ns = 0
+    bpftrace_map = {}
+    loss_map = {}
+
+    with open(bpftrace_f.name, 'r') as bpftrace_f:
+        for i, flow in enumerate(flows):
+            bpftrace_f.seek(0)
+            with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
+                for line in bpftrace_f.readlines():
+                    data = line.rstrip().split(',')
+                    if len(data) == 7:
+                        if initial_timestamp_ns == 0:
+                            initial_timestamp_ns = int(data[1])
+                            elapsed = 0
+                        else:
+                            elapsed = int(data[1]) - initial_timestamp_ns
+                        delivered = int(data[2])
+                        rtt_us = int(data[3])
+                        port = int(data[5])
+                        rack_rtt = int(data[6])
+                        ebw = (delivered * 1500 * 8) / rtt_us
+
+                        if port == flow.sport:
+                            if not i in bpftrace_map:
+                                bpftrace_map[i] = ([], [], [], [])
+                            
+                            (x, y, z, w) = bpftrace_map[i]
+                            x.append(elapsed)
+                            y.append(rtt_us)
+                            z.append(delivered)
+                            w.append(ebw) # Mbps
+
+                            output = ','.join(data) + ',' + str(ebw) + '\n'
+                            bpftrace_output_per_flow.write(output)
+                    elif len(data) == 10:
+                        if initial_timestamp_ns == 0:
+                            initial_timestamp_ns = int(data[1])
+                            elapsed = 0
+                        else:
+                            elapsed = int(data[1]) - initial_timestamp_ns
+                        gso_segs = int(data[2])
+                        port = int(data[7])
+
+                        if port == flow.sport:
+                            if not i in loss_map:
+                                loss_map[i] = ([], [])
+                            
+                            (x, y) = loss_map[i]
+                            x.append(elapsed)
+                            y.append(gso_segs)
+
+                        bpftrace_output_per_flow.write(line)                    
+                    else:
+                        bpftrace_output_per_flow.write(line)
+                        continue
+
+            if not bpftrace_map.get(i):
+                print("There is no bpftrace result.")
+                return None
+            
+            # with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
+            #     for j, _ in enumerate(bpftrace_map[i][0]):
+            #         bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]},{bpftrace_map[i][3][j]}\n')
+
+    return (bpftrace_map, loss_map)
+
 
 def end_bpftrace(bpftrace_p, bpftrace_f, flows):
     bpftrace_p.kill()
@@ -558,6 +630,7 @@ def run_k8s_neper_clients(num_flows, duration, servers, clients):
         f = tempfile.NamedTemporaryFile()
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)   
         
+        print(neper_args)
         processes.append((p, f))
         flow = NeperFlowStat()
         if args.native:
@@ -586,6 +659,10 @@ def run_k8s_neper_clients(num_flows, duration, servers, clients):
                 i, flow = find_flow(flows, int(tokens[1]))
             elif tokens[0] == 'throughput':
                 flow.throughput = float(tokens[1])
+            elif tokens[0] == 'latency_mean':
+                flow.tcp_rtt_mean = float(tokens[1]) * 1000000
+            elif tokens[0] == 'latency_stddev':
+                flow.tcp_rtt_std = float(tokens[1]) * 1000000
         
         f.close()
 
@@ -593,6 +670,62 @@ def run_k8s_neper_clients(num_flows, duration, servers, clients):
         # print(f'{i}: {flow.dport}, {flow.throughput:.3f}')
 
     return flows
+
+def plot_graphs_stat(epping_map, bpftrace_map, loss_map, peak, max_time):
+    minlen = min(len(epping_map), len(bpftrace_map))
+
+    for i in range(0, minlen):
+        figure = pp.figure(figsize=(10, 6))
+        xrange = np.array([0, max_time])
+        yrange = np.array([0, peak])
+        pp.xlim(xrange)
+        pp.ylim(yrange)
+        pp.xticks(np.linspace(*xrange, 7))
+        pp.yticks(np.linspace(*yrange, 11))
+
+        if not args.no_bpftrace:
+            (bx, by, bz, bw) = bpftrace_map[i]
+            pp.plot(bx, by, linewidth=0.1)
+            if i in loss_map:
+                for point in loss_map[i]:
+                    print(point[0])
+                    pp.axvline(point[0])
+
+        (ex, ey) = epping_map[i]
+        pp.plot(ex, ey, linewidth=0.5)
+        
+        name = f'{i}.{experiment}'
+        output = f"rtt.{name}.png"
+        pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
+        # Distributions
+        dist_max = max(max(by), max(ey))
+        dist_min = min(min(by), min(ey))
+        bins = np.linspace(dist_min, dist_max, int(dist_max - dist_min) + 1)
+        figure = pp.figure(figsize=(10, 6))
+        pp.hist(by, bins, alpha=0.5, label='bpftrace', density=True)
+        pp.hist(ey, bins, alpha=0.5, label='epping', density=True)
+            
+        output = f"dist.{i}.{experiment}.png"
+        pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
+        # Estimated bandwidth
+        if not args.no_bpftrace:
+            (bx, by, bz, bw) = bpftrace_map[i]
+
+            figure = pp.figure(figsize=(10, 6))
+            xrange = np.array([0, max_time])
+            yrange = np.array([0, max(bw)])
+            pp.xlim(xrange)
+            pp.ylim(yrange)
+            pp.xticks(np.linspace(*xrange, 7))
+            pp.yticks(np.linspace(*yrange, 11))
+    
+            pp.plot(bx, bw, linewidth=0.1)
+            name = f'{i}.{experiment}'
+            output = f"ewb.{name}.png"
+            pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
+
 
 def plot_graphs(epping_map, bpftrace_map, peak, max_time):
     minlen = min(len(epping_map), len(bpftrace_map))

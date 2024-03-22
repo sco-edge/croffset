@@ -650,22 +650,22 @@ static int parse_vxlan_identifier(struct parsing_context *pctx,
 	} __attribute__((packed));
 
 	if (parse_udphdr(&pctx->nh, pctx->data_end, &udphdr) < 0) {
-		const char fmt_str[] = "Failed at parse_udphdr";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str));
+		// const char fmt_str[] = "Failed at parse_udphdr";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str));
 		return -1;
 	}
 
 	// VXLAN dest port is 8472
 	if (udphdr->dest != bpf_htons(8472)) {
-		const char fmt_str[] = "Failed at dest != 8472. dest: %d";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str), udphdr->dest);
+		// const char fmt_str[] = "Failed at dest != 8472. dest: %d";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str), udphdr->dest);
 		return -1;
 	}
 
 	struct vxlanhdr *h = pctx->nh.pos;
 	if (h + 1 > pctx->data_end) {
-		const char fmt_str[] = "Failed at h + 1 > pctx->data_end";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str));
+		// const char fmt_str[] = "Failed at h + 1 > pctx->data_end";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str));
 		return -1;
 	}
 
@@ -673,28 +673,28 @@ static int parse_vxlan_identifier(struct parsing_context *pctx,
 	proto = parse_iphdr(&pctx->nh, pctx->data_end, &iphdr);
 
 	if (proto != IPPROTO_TCP) {
-		const char fmt_str[] = "Failed at proto != IPPROTO_TCP. proto: %d";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str), proto);
+		// const char fmt_str[] = "Failed at proto != IPPROTO_TCP. proto: %d";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str), proto);
 		return -1;
 	}
 
 	struct tcphdr *hdr2;
 	if (parse_tcphdr(&pctx->nh, pctx->data_end, &hdr2) < 0) {
-		const char fmt_str[] = "Failed at parse_tcphdr";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str));
+		// const char fmt_str[] = "Failed at parse_tcphdr";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str));
 		return -1;
 	}
 
 	if (config.skip_syn && hdr2->syn) {
-		const char fmt_str[] = "Failed at config.skip_syn && hdr2->syn";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str));
+		// const char fmt_str[] = "Failed at config.skip_syn && hdr2->syn";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str));
 		return -1;
 	}
 
 	if (parse_tcp_ts(hdr2, pctx->data_end, &proto_info->pid,
 			 &proto_info->reply_pid) < 0) {
-		const char fmt_str[] = "Failed at parse_tcp_ts";
-		bpf_trace_printk(fmt_str, sizeof(fmt_str));
+		// const char fmt_str[] = "Failed at parse_tcp_ts";
+		// bpf_trace_printk(fmt_str, sizeof(fmt_str));
 		return -1; //Possible TODO, fall back on seq/ack instead
 	}
 

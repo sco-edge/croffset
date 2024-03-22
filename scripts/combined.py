@@ -77,8 +77,7 @@ def main():
         servers = get_k8s_servers('neper')
         clients = get_k8s_clients('neper')
 
-        # print(f"Debug: {servers}, {clients}")
-        if len(servers) == 0 or len(clients) == 0:
+        if len(servers[0]) == 0 or len(clients[0]) == 0:
             vxlan_epping_p.kill()
             host_epping_p.kill()
             util_p.kill()
@@ -86,6 +85,8 @@ def main():
                 bpftrace_p.kill()
             print('Check that kubeconfig is properly set.')
             exit(-1)
+        # print(servers)
+        # print(clients)
         (flows, container_flows) = run_combined_neper_clients(num_flows, num_container_flows, duration, server_addr, servers, clients)
 
     # Using iperf
@@ -101,6 +102,8 @@ def main():
                 bpftrace_p.kill()
             print('Check that kubeconfig is properly set.')
             exit(-1)
+        # print(servers)
+        # print(clients)
         (flows, container_flows) = run_combined_iperf_clients(num_flows, num_container_flows, duration, server_addr, servers, clients)
 
     end_cpu_utilization(util_p, util_f)
@@ -302,7 +305,7 @@ def process_interrupt_count(old_interrupts_f, old_softirqs_f):
 def start_vxlan_epping(interface):
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.epping.v.{experiment}.out', 'w') as f:
-        p = subprocess.Popen(["./pping", "-i", interface, "-x", "native", "-V"], stdout=f, cwd='../..')
+        p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-V"], stdout=f, cwd='../..')
         
     time.sleep(2)
     return (p, f)
@@ -310,7 +313,7 @@ def start_vxlan_epping(interface):
 def start_host_epping(interface):
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.epping.h.{experiment}.out', 'w') as f:
-        p = subprocess.Popen(["./pping", "-i", interface, "-x", "native"], stdout=f, cwd='../..')
+        p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native"], stdout=f, cwd='../..')
 
     time.sleep(2)
     return (p, f)
@@ -323,12 +326,18 @@ def end_epping(epping_p, epping_f, flows, is_vxlan):
     with open(epping_f.name, 'r') as epping_f:
         for (i, flow) in enumerate(flows):
             epping_f.seek(0)
-            if is_vxlan:
+            if is_vxlan and not args.native:
                 print(f"{i}: UDP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
                 target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
                 expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s" + "192.168.2.103" + re.escape(target) + r"$")
                 samples = parse(epping_f, expr)
                 # samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
+            elif is_vxlan and args.native:
+                print(f"{i}: TCP {str(flow.daddr)}:{str(flow.dport)}+{str(flow.saddr)}:{str(flow.sport)}")
+                target = str(flow.daddr) + ":" + str(flow.dport) + "+" + str(flow.saddr) + ":" + str(flow.sport)
+                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
+                samples = parse(epping_f, expr)
+                # samples = parse(epping_f, "TCP", ".*?", str(flow.dport), "192.168.2.102", str(flow.sport))
             else:
                 print(f"{i}: TCP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
                 target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
@@ -583,11 +592,15 @@ def run_combined_iperf_clients(num_flows, num_container_flows, duration, server_
         # f = tempfile.NamedTemporaryFile()
         f = open(f'raw.iperf.v.{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
-        
+
         processes.append((p, f, True))
         flow = FlowStat()
-        flow.saddr = "192.168.2.102"
-        flow.daddr = "192.168.2.103"
+        if args.native:
+            flow.saddr = servers[i][0]
+            flow.daddr = clients[i][0]
+        else:
+            flow.saddr = "192.168.2.102"
+            flow.daddr = "192.168.2.103"
         
         flow.dport = ports[i]
         container_flows.append(flow)
@@ -598,7 +611,7 @@ def run_combined_iperf_clients(num_flows, num_container_flows, duration, server_
         _, err = p.communicate()
         if err != None and err != b'':
             print('iperf3 error:', err.decode('utf-8'))
-            return None
+            return None, None
         
         f.seek(0)
         data = json.load(f)
@@ -729,6 +742,7 @@ if __name__ == "__main__":
     parser.add_argument('--container-flow', '-c', default=3)
     parser.add_argument('--time', '-t', default=60)
     parser.add_argument('--app', '-a', default='iperf')
+    parser.add_argument('--native', action='store_true')
     parser.add_argument('--silent', '-s', action='store_true')
     parser.add_argument('--no-bpftrace', action='store_true')
     parser.add_argument('--no-plot', action='store_true')

@@ -37,15 +37,17 @@ def plot_dists(target, flow_index):
         lines = f.readlines()
         for l in lines:
             data = l.split(",")
-            if int(data[1]) >= bound:
-                bpf_outliers.append(int(data[1]))
+            if len(data) < 6:
+                continue
+            if int(data[3]) >= bound:
+                bpf_outliers.append(int(data[3]))
                 continue
 
-            if int(data[1]) >= max_rtt:
-                max_rtt = int(data[1])
-            if int(data[1]) <= min_rtt:
-                min_rtt = int(data[1])
-            bpf_data.append(int(data[1]))
+            if int(data[3]) >= max_rtt:
+                max_rtt = int(data[3])
+            if int(data[3]) <= min_rtt:
+                min_rtt = int(data[3])
+            bpf_data.append(int(data[3]))
 
     with open(f"epping.{flow_index}.{target}.out") as f:
         lines = f.readlines()
@@ -80,6 +82,8 @@ def plot_dists(target, flow_index):
     figure = pp.figure(figsize=(10, 6))
     pp.hist(bpf_data, bins, alpha=0.5, label='bpftrace', histtype='step', cumulative=True, density=True)
     pp.hist(epping_data, bins, alpha=0.5, label='epping', histtype='step', cumulative=True, density=True)
+    pp.xlim(0, max_rtt)
+    pp.ylim(0, 1.0)
         
     output = f"dist3.{flow_index}.{target}.png"
     pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
