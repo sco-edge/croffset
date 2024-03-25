@@ -10,5 +10,8 @@ kprobe:bbr_update_model
 	$port = $sock->__sk_common.skc_num;
 	$rs = (struct rate_sample *)arg1;
 
-	printf("0x%llx,%lld,%ld,%ld,%d,%d\n", arg0, elapsed, $rs->delivered, $rs->interval_us, $rs->is_app_limited, $port);
+	printf("%lld bbr_update_model() 0x%llx %d %d %d   %d\n",
+		   nsecs,
+		   arg0, $port, $rs->is_app_limited, $rs->delivered,
+		   $rs->interval_us);
 }

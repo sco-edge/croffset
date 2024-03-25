@@ -3,6 +3,7 @@
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
 #include <linux/win_minmax.h>
+#include <net/tcp.h>
 
 kprobe:tcp_rack_detect_loss
 {
@@ -13,26 +14,20 @@ kprobe:tcp_rack_detect_loss
 	$f_tcp_min_rtt = $minmax.s[0].v >> 2;
 	$no_reo_wnd = $tp->sacked_out - $tp->reordering;
 	printf("%lld tcp_rack_detect_loss() %d %d %d\n",
-		   elapsed, $inet_csk->icsk_ca_state, $no_reo_wnd,
-		   $f_tcp_min_rtt * $tp->rack.reo_wnd_steps);
+		   nsecs,
+		   $inet_csk->icsk_ca_state, $no_reo_wnd, $f_tcp_min_rtt * $tp->rack.reo_wnd_steps);
 }
 
 kretprobe:tcp_rack_detect_loss
 {
 	printf("%lld tcp_rack_detect_loss() exit\n",
-		   elapsed);
+		   nsecs);
 }
 
 kprobe:tcp_rack_skb_timeout
 {
-	//$tp = (struct tcp_sock *) arg0;
-	//$skb = (struct sk_buff *) arg1;
-	//printf("%lld tcp_rack_skb_timeout() %d %d %d %d\n",
-	//	   elapsed, $tp->rack.rtt_us, arg2, $tp->tcp_mstamp,
-	//	   $skb->skb_mstamp_ns);
-
 	printf("%lld tcp_rack_skb_timeout()\n",
-		   elapsed);
+		   nsecs);
 }
 
 kprobe:tcp_mark_skb_lost
@@ -51,8 +46,55 @@ kprobe:tcp_mark_skb_lost
 	$f_srtt_us = $tp->srtt_us >> 3;
 	$tolerance = $tp->rack.rtt_us + $f_tcp_min_rtt * $tp->rack.reo_wnd_steps;
 
-	printf("%lld tcp_mark_skb_lost() 0x%llx %d %d %d %d %d %d %d\n",
-		   elapsed, arg0, $port, $gso_segs,
+	$seq = $cbuff->seq;
+	$end_seq = $cbuff->end_seq;
+
+	printf("%lld tcp_mark_skb_lost() 0x%llx 0x%llx %d %d   %d %d %d %d   %d %x %x\n",
+		   nsecs,
+		   arg0, arg1, $port, $gso_segs,
 		   $tp->reord_seen, $tolerance, $diff, $tp->rack.dsack_seen,
-		   $f_srtt_us);
+		   $f_srtt_us, $seq, $end_seq);
+}
+
+kprobe:tcp_check_dsack
+{
+	$sp = (struct tcp_sack_block_wire *)arg2;
+	$start_seq = $sp[0].start_seq;
+	$end_seq = $sp[0].end_seq;
+	printf("%lld tcp_check_dsack() %x %x\n",
+		   nsecs,
+		   $start_seq, $end_seq);
+}
+
+kretprobe:tcp_check_dsack
+/retval/
+{
+	printf("%lld tcp_check_dsack() returns true\n",
+		   nsecs);
+}
+
+kprobe:tcp_retransmit_skb
+{
+	$sk = (struct sock *)arg0;
+	$skb = (struct sk_buff *)arg1;
+	$segs = arg2;
+	$cbuff = (struct tcp_skb_cb *)$skb->cb;
+	$pcb = (uint32 *)$skb->cb;
+	$tcp_gso_segs = $cbuff->tcp_gso_segs;
+
+	$seq = $cbuff->seq;
+	$end_seq = $cbuff->end_seq;
+
+	printf("%lld tcp_retransmit_skb() 0x%llx 0x%llx %d %d   %x %x\n",
+		   nsecs,
+		   arg0, arg1, arg2, $tcp_gso_segs,
+		   $seq, $end_seq);
+}
+
+kretprobe:__tcp_retransmit_skb
+/retval/
+{
+	printf("%lld __tcp_retransmit_skb() returns %d\n",
+		   nsecs,
+		   retval);
 }
