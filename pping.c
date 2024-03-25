@@ -992,12 +992,18 @@ static void print_ns_datetime(FILE *stream, __u64 monotonic_ns)
 	fprintf(stream, "%s.%09llu", timestr, ts % NS_PER_SECOND);
 }
 
+static void print_ns_raw(FILE *stream, __u64 monotonic_ns)
+{
+	fprintf(stream, "%lld", monotonic_ns);
+}
+
 static void print_event_standard(FILE *stream, const union pping_event *e)
 {
 	char protostr[16];
 
 	if (e->event_type == EVENT_TYPE_RTT) {
-		print_ns_datetime(stream, e->rtt_event.timestamp);
+		// print_ns_datetime(stream, e->rtt_event.timestamp);
+		print_ns_raw(stream, e->rtt_event.timestamp);
 		fprintf(stream, " %.6g ms %.6g ms %s ",
 			(double)e->rtt_event.rtt / NS_PER_MS,
 			(double)e->rtt_event.min_rtt / NS_PER_MS,
@@ -1006,7 +1012,8 @@ static void print_event_standard(FILE *stream, const union pping_event *e)
 		print_flow_ppvizformat(stream, &e->rtt_event.flow);
 		fprintf(stream, "\n");
 	} else if (e->event_type == EVENT_TYPE_FLOW) {
-		print_ns_datetime(stream, e->flow_event.timestamp);
+		// print_ns_datetime(stream, e->flow_event.timestamp);
+		print_ns_raw(stream, e->rtt_event.timestamp);
 		fprintf(stream, " %s ",
 			ipproto_to_str(protostr, sizeof(protostr),
 				       e->rtt_event.flow.proto));

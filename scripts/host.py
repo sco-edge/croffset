@@ -9,6 +9,8 @@ import re
 import time
 import argparse
 
+import croffset
+
 class FlowStat:
     saddr:str = None
     sport:int = None
@@ -281,20 +283,25 @@ def end_epping(epping_p, epping_f, flows):
             if args.vxlan:
                 print(f"{i}: UDP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
                 target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s" + "192.168.2.103" + re.escape(target) + r"$")
-                samples = parse(epping_f, expr)
+                # expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                expr = re.compile(r"^(\d+)\s(.+?)\sms\s(.+?)\sms\s" + r"UDP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                samples = parse_raw(epping_f, expr)                
+                # samples = parse(epping_f, expr)
                 # samples = parse(epping_f, "UDP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
             elif args.native:
                 print(f"{i}: TCP {str(flow.daddr)}:{str(flow.dport)}+{str(flow.saddr)}:{str(flow.sport)}")
                 target = str(flow.daddr) + ":" + str(flow.dport) + "+" + str(flow.saddr) + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
+                # expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
+                expr = re.compile(r"^(\d+)\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + re.escape(target) + r"$")
                 samples = parse(epping_f, expr)
                 # samples = parse(epping_f, "TCP", ".*?", str(flow.dport), "192.168.2.102", str(flow.sport))
             else:
                 print(f"{i}: TCP 192.168.2.103:{str(flow.dport)}+192.168.2.102:{str(flow.sport)}")
                 target = ":" + str(flow.dport) + "+" + "192.168.2.102" + ":" + str(flow.sport)
-                expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + "192.168.2.103" + re.escape(target) + r"$")
-                samples = parse(epping_f, expr)
+                # expr = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{9})\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                expr = re.compile(r"^(\d+)\s(.+?)\sms\s(.+?)\sms\s" + r"TCP\s" + "192.168.2.103" + re.escape(target) + r"$")
+                samples = parse_raw(epping_f, expr)
+                # samples = parse(epping_f, expr)
                 # samples = parse(epping_f, "TCP", "192.168.2.103", str(flow.dport), "192.168.2.102", str(flow.sport))
 
             if len(samples) == 0:
@@ -308,7 +315,7 @@ def end_epping(epping_p, epping_f, flows):
 
             with open(f'epping.{i}.{experiment}.out', 'w') as epping_output_per_flow:
                 for j, _ in enumerate(epping_map[i][0]):
-                    epping_output_per_flow.write(f'{epping_map[i][0][j].astype(int)},{epping_map[i][1][j]}\n')
+                    epping_output_per_flow.write(f'{epping_map[i][0][j].astype(int)} {epping_map[i][1][j]}\n')
 
     return epping_map
 
@@ -320,122 +327,44 @@ def start_bpftrace():
 
     return (p, f)
 
-def end_bpftrace_stat(bpftrace_p, bpftrace_f, flows):
+def end_bpftrace(bpftrace_p, bpftrace_f, flows):
     bpftrace_p.kill()
-
-    initial_timestamp_ns = 0
     bpftrace_map = {}
-    loss_map = {}
 
     with open(bpftrace_f.name, 'r') as bpftrace_f:
         for i, flow in enumerate(flows):
             bpftrace_f.seek(0)
             with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
                 for line in bpftrace_f.readlines():
-                    data = line.rstrip().split(',')
-                    if len(data) == 7:
-                        if initial_timestamp_ns == 0:
-                            initial_timestamp_ns = int(data[1])
-                            elapsed = 0
-                        else:
-                            elapsed = int(data[1]) - initial_timestamp_ns
-                        delivered = int(data[2])
-                        rtt_us = int(data[3])
-                        port = int(data[5])
-                        rack_rtt = int(data[6])
-                        ebw = (delivered * 1500 * 8) / rtt_us
+                    data = line.rstrip().split()
+                    if len(data) < 2:
+                        continue
 
-                        if port == flow.sport:
+                    if data[1] == "bbr_update_model()":
+                        ts_ns = int(data[0])
+                        sock = data[2]
+                        sport = int(data[3])
+                        app_limited = int(data[4])
+                        delivered = int(data[5])
+                        trtt_us = int(data[6])
+                        ebw = (delivered * 1500 * 8) / trtt_us
+
+                        if sport == flow.sport:
                             if not i in bpftrace_map:
                                 bpftrace_map[i] = ([], [], [], [])
                             
                             (x, y, z, w) = bpftrace_map[i]
-                            x.append(elapsed)
-                            y.append(rtt_us)
+                            x.append(ts_ns)
+                            y.append(trtt_us)
                             z.append(delivered)
                             w.append(ebw) # Mbps
 
-                            output = ','.join(data) + ',' + str(ebw) + '\n'
+                            output = ' '.join(data) + ' ' + str(ebw) + '\n'
                             bpftrace_output_per_flow.write(output)
-                    elif len(data) == 10:
-                        if initial_timestamp_ns == 0:
-                            initial_timestamp_ns = int(data[1])
-                            elapsed = 0
-                        else:
-                            elapsed = int(data[1]) - initial_timestamp_ns
-                        gso_segs = int(data[2])
-                        port = int(data[7])
-
-                        if port == flow.sport:
-                            if not i in loss_map:
-                                loss_map[i] = ([], [])
-                            
-                            (x, y) = loss_map[i]
-                            x.append(elapsed)
-                            y.append(gso_segs)
-
-                        bpftrace_output_per_flow.write(line)                    
-                    else:
-                        bpftrace_output_per_flow.write(line)
-                        continue
 
             if not bpftrace_map.get(i):
                 print("There is no bpftrace result.")
                 return None
-            
-            # with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
-            #     for j, _ in enumerate(bpftrace_map[i][0]):
-            #         bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]},{bpftrace_map[i][3][j]}\n')
-
-    return (bpftrace_map, loss_map)
-
-
-def end_bpftrace(bpftrace_p, bpftrace_f, flows):
-    bpftrace_p.kill()
-
-    initial_timestamp_ns = 0
-    bpftrace_map = {}
-
-    with open(bpftrace_f.name, 'r') as bpftrace_f:
-        for i, flow in enumerate(flows):
-            bpftrace_f.seek(0)
-            with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
-                for line in bpftrace_f.readlines():
-                    data = line.rstrip().split(',')
-                    if len(data) != 6:
-                        bpftrace_output_per_flow.write(line)
-                        continue
-
-                    if initial_timestamp_ns == 0:
-                        initial_timestamp_ns = int(data[1])
-                        elapsed = 0
-                    else:
-                        elapsed = int(data[1]) - initial_timestamp_ns
-                    delivered = int(data[2])
-                    rtt_us = int(data[3])
-                    port = int(data[5])
-                    ebw = (delivered * 1500 * 8) / rtt_us
-
-                    if port == flow.sport:
-                        if not i in bpftrace_map:
-                            bpftrace_map[i] = ([], [], [], [])
-                        
-                        (x, y, z, w) = bpftrace_map[i]
-                        x.append(elapsed)
-                        y.append(rtt_us)
-                        z.append(delivered)
-                        w.append(ebw) # Mbps
-
-                        output = ','.join(data) + ',' + str(ebw) + '\n'
-                        bpftrace_output_per_flow.write(output)
-
-            if not bpftrace_map.get(i):
-                print("There is no bpftrace result.")
-                return None
-            
-            # with open(f'bpftrace.{i}.{experiment}.out', 'w') as bpftrace_output_per_flow:
-            #     for j, _ in enumerate(bpftrace_map[i][0]):
-            #         bpftrace_output_per_flow.write(f'{bpftrace_map[i][0][j]},{bpftrace_map[i][1][j]},{bpftrace_map[i][2][j]},{bpftrace_map[i][3][j]}\n')
 
     return bpftrace_map
 
@@ -726,7 +655,6 @@ def plot_graphs_stat(epping_map, bpftrace_map, loss_map, peak, max_time):
             output = f"ewb.{name}.png"
             pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
-
 def plot_graphs(epping_map, bpftrace_map, peak, max_time):
     minlen = min(len(epping_map), len(bpftrace_map))
 
@@ -800,6 +728,21 @@ def parse(f, expr):
             
         rtt_us = float(match.group(2)) * 1000
         samples.append(((timestamp_ns - initial_timestamp_ns), rtt_us))
+
+    return np.array(samples)
+
+def parse_raw(f, expr):
+    samples = []
+    lines = f.readlines()
+    for l in lines:
+        match = expr.search(l)
+        if match == None:
+            continue
+        
+        timestamp_ns = int(match.group(1))
+
+        rtt_us = float(match.group(2)) * 1000
+        samples.append((timestamp_ns, rtt_us))
 
     return np.array(samples)
 
