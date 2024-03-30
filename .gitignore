@@ -5,3 +5,7 @@ iperfs/rust-iperf/target/
 *.ll
 *.o
 *.csv
+*.log
+scripts/*.png
+**/__pycache__/
+.vscode/
