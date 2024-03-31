@@ -45,15 +45,9 @@ def main():
     cca = "bbr"
 
     global experiment
+    experiment = f"run-0"
 
     initialize_nic()
-
-    if args.vxlan:
-        experiment = f"tx-e-f{num_flows}-t{duration}-{cca}-{args.app}-0"
-    elif args.native:
-        experiment = f"tx-n-f{num_flows}-t{duration}-{cca}-{args.app}-0"
-    else:
-        experiment = f"tx-h-f{num_flows}-t{duration}-{cca}-{args.app}-0"
 
     os.chdir("..")
     if not os.path.exists("data"):
@@ -120,7 +114,7 @@ def main():
     epping_map = end_epping(epping_p, epping_f, flows)
     if not args.no_bpftrace:
         # (bpftrace_map, loss_map) = end_bpftrace_stat(bpftrace_p, bpftrace_f, flows)
-        bpftrace_map = end_bpftrace(bpftrace_p, bpftrace_f, flows)
+        (bpftrace_map, loss_map) = end_bpftrace(bpftrace_p, bpftrace_f, flows)
     else:
         bpftrace_map = {}
 
@@ -137,11 +131,11 @@ def main():
 
     print(f'{experiment}')
     if args.app == "neper":
-        print('{0:>{1}} i {2:>10} {3:>8} {4:>15} {5:>15} {6:>13}'. \
-              format('experiment', len(experiment), 'flow', 'tput', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
+        print('expr i {0:>10} {1:>8} {2:>15} {3:>15} {4:>13}'. \
+              format('flow', 'tput', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
     else:
-        print('{0:>{1}} i {2:>10} {3:>7} {4:>5} {5:>15} {6:>15} {7:>13}'. \
-              format('experiment', len(experiment), 'flow', 'tput', 'rtx', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
+        print('expr i {0:>10} {1:>7} {2:>5} {3:>15} {4:>15} {5:>13}'. \
+              format('flow', 'tput', 'rtx', 'nic_rtt (us)', 'tcp_rtt (us)', 'offset'))
 
     for i, flow in enumerate(flows):
         flow.nic_rtt_mean = np.average(epping_map[i][1])
@@ -265,9 +259,11 @@ def start_epping(interface):
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.epping.{experiment}.out', 'w') as f:
         if args.vxlan:
-            p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-V"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"], stdout=f, cwd='../..')
+            # p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-V"], stdout=f, cwd='../..')
         else:
-            p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native"], stdout=f, cwd='../..')
+            p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"], stdout=f, cwd='../..')
+            # p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native"], stdout=f, cwd='../..')
 
     time.sleep(2)
     return (p, f)
@@ -322,14 +318,21 @@ def end_epping(epping_p, epping_f, flows):
 def start_bpftrace():
     # f = tempfile.NamedTemporaryFile()
     with open(f'raw.bpftrace.{experiment}.out', 'w') as f:
-        p = subprocess.Popen(["./bbr.bt"], stdout=f, cwd='../..')
-        # p = subprocess.Popen(["./stat.bt"], stdout=f, cwd='../..')
+        # p = subprocess.Popen(["./trtt_cubic.bt"], stdout=f, cwd='../..')
+        # p = subprocess.Popen(["./trtt_bbr.bt"], stdout=f, cwd='../..')
+        p = subprocess.Popen(["./trtt_rack_bbr.bt"], stdout=f, cwd='../..')
+        # p = subprocess.Popen(["./trtt_rack_cubic_proto.bt"], stdout=f, cwd='../..')
+        # p = subprocess.Popen(["./skb_timeout.bt"], stdout=f, cwd='../..')
 
     return (p, f)
 
 def end_bpftrace(bpftrace_p, bpftrace_f, flows):
     bpftrace_p.kill()
     bpftrace_map = {}
+    loss_map = {}
+
+    # To check tcp_mark_skb_lost() is called through tcp_ack() path
+    rack_detect_loss_flag = False
 
     with open(bpftrace_f.name, 'r') as bpftrace_f:
         for i, flow in enumerate(flows):
@@ -343,10 +346,10 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
                     if data[1] == "bbr_update_model()":
                         ts_ns = int(data[0])
                         sock = data[2]
-                        sport = int(data[3])
-                        app_limited = int(data[4])
-                        delivered = int(data[5])
-                        trtt_us = int(data[6])
+                        delivered = int(data[3])
+                        trtt_us = int(data[4])
+                        app_limited = int(data[5])
+                        sport = int(data[6])
                         ebw = (delivered * 1500 * 8) / trtt_us
 
                         if sport == flow.sport:
@@ -361,12 +364,36 @@ def end_bpftrace(bpftrace_p, bpftrace_f, flows):
 
                             output = ' '.join(data) + ' ' + str(ebw) + '\n'
                             bpftrace_output_per_flow.write(output)
+                    elif data[1] == "tcp_rack_detect_loss()" and data[2] == "enter":
+                        rack_detect_loss_flag = True
+                    elif data[1] == "rack_detect_loss_flag" and rack_detect_loss_flag == True:
+                        sport = int(data[4])
+                        if sport == flow.sport:
+                            if not i in loss_map:
+                                loss_map[i] = ([], [], [], [])
+                            (x, y, z, w) = loss_map[i]
+
+                            ts_ns = int(data[0])
+                            gso_segs = int(data[5])
+                            reord_seen = int(data[6])
+                            tolerance = int(data[7])
+                            diff = int(data[8])
+                            dsack_seen = int(data[9])
+
+                            x.append(ts_ns)
+                            y.append(gso_segs)
+                            z.append(tolerance)
+                            w.append(diff)
+
+                    elif data[1] == "tcp_rack_detect_loss()" and data[2] == "exit":
+                        rack_detect_loss_flag = False
+
 
             if not bpftrace_map.get(i):
                 print("There is no bpftrace result.")
-                return None
+                return None, None
 
-    return bpftrace_map
+    return (bpftrace_map, loss_map)
 
 def get_k8s_servers(target):
     first = ['kubectl', 'get', 'pods', '-owide']

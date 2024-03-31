@@ -52,22 +52,22 @@ def plot_graphs(fbrtt, ftrtt, flows):
             output = f"ewb.{name}.png"
             pp.savefig(output, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
-def plot_rtts(flow, output_name):
+def plot_rtts(flow, output_name, plot_loss):
     figure = pp.figure(figsize=(10, 6))
-    # brtts_x = flow.brtts[:, 0]
-    # brtts_y = flow.brtts[:, 1]
     yrange = np.array([0, 500])
     pp.ylim(yrange)
     pp.plot(flow.brtts[:, 0], flow.brtts[:, 1], linewidth=0.5)
     pp.plot(flow.trtts[:, 0], flow.trtts[:, 1], linewidth=0.1)
+
+    if plot_loss == True:
+        for (ts_ns, loss) in flow.losses:
+            pp.axvline(x=ts_ns, color='red')
+
     pp.savefig(output_name, dpi=300, bbox_inches='tight', pad_inches=0.05)
 
 def plot_offsets(flow, output_name):
-    # print(flow.offsets[:, 0])
-    # print("##")
-    # print(flow.offsets[:, 1])
     figure = pp.figure(figsize=(10, 6))
     yrange = np.array([-500, 1500])
     pp.ylim(yrange)
     pp.step(flow.offsets[:, 0], flow.offsets[:, 1], where='post', label='offset')
-    pp.savefig(output_name, dpi=300, bbox_inches='tight', pad_inches=0.05)
+    pp.savefig(output_name, dpi=300, bbox_inches='tight', pad_inches=0.01)
