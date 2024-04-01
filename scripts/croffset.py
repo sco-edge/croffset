@@ -2,16 +2,32 @@
 import re
 import numpy as np
 
-class RetransmissionEvent:
-    skb = None
+mss = 1398
+
+class Segment:
     left = None
     right = None
-    loss_event = None
+    seglen = None
+    bytelen = None
 
-    def __init__(self, skb, left, right):
-        self.skb = skb
+    def __init__(self, left, right):
         self.left = left
         self.right = right
+        self.bytelen = int(right, 16) - int(left, 16)
+        self.seglen = int(self.bytelen / mss)
+
+class RetransmissionEvent:
+    skb = None
+    segment = None
+    segavail = None
+    loss_event = None
+    segsent = None
+
+    def __init__(self, skb, left, right, segavail, segs):
+        self.skb = skb
+        self.segment = Segment(left, right)
+        self.segavail = segavail
+        self.segsent = min(segs, segavail)
 
 class LossEvent:
     skb = None
@@ -20,6 +36,8 @@ class LossEvent:
     rack_rtt_us = None
     reo_wnd = None
     waiting = None
+    seg_left = None
+    seg_right = None
 
     def __init__(self, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd, waiting):
         self.skb = skb
@@ -77,12 +95,6 @@ class Flow:
 
         self.brtts = np.array(brtt_points)
 
-        brtt_min = np.min(self.brtts[:, 0])
-        if self.init_ts == None:
-            self.init_ts = brtt_min
-        elif brtt_min < self.init_ts:
-            self.init_ts = brtt_min
-
     def parse_trtt_trace_bbr(self, file):
         trtt_points = []
         loss_points = []
@@ -104,12 +116,38 @@ class Flow:
                     self.parse_bbr_update_model(tokens, trtt_points)
                     continue
 
+        if len(trtt_points) == 0:
+            print("parse_trtt_trace_bbr() parsing failed.")
+            return
+        
+        self.trtts = np.array(trtt_points)
+        self.init_ts = int(min(np.min(self.trtts[:, 0]), np.min(self.brtts[:, 0])))
+
+        # Regularize to init_ts
+        self.brtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.brtts])
+        self.trtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.trtts])
+
+    def parse_sock_trace(self, file):
+        loss_points = []
+        retrans_points = []
+        sr_points = []
+        dsack_points = []
+
+        reo_wnd_used = False
+
+        with open(file, 'r') as lines:
+            lines.seek(0)
+            for l in lines:
+                tokens = l.rstrip().split()
+                if len(tokens) < 2:
+                    continue
+
                 # Packet loss events
                 if tokens[1] == "tcp_rack_detect_loss()" or tokens[1] == "tcp_mark_skb_lost()":
                     reo_wnd_used = self.parse_loss_event(tokens, loss_points, reo_wnd_used)
                     continue
 
-                # Transmission events:
+                # Transmission events
                 if tokens[1] == "tcp_retransmit_skb()" or tokens[1] == "__tcp_retransmit_skb()":
                     self.parse_tcp_retransmit_skb(tokens, retrans_points)
                     continue
@@ -119,20 +157,10 @@ class Flow:
                     self.parse_tcp_check_dsack(tokens, sr_points, dsack_points)
                     continue
 
-        if len(trtt_points) == 0:
-            print("parse_trtt_trace_bbr() parsing failed.")
-            return
-        self.trtts = np.array(trtt_points)
-        self.losses = np.array(loss_points)
-        self.retrans = np.array(retrans_points)
-        self.sretrans = np.array(sr_points)
-        self.dsacks = np.array(dsack_points)
-
-        trtt_min = np.min(self.trtts[:, 0])
-        if self.init_ts == None:
-            self.init_ts = trtt_min
-        elif trtt_min < self.init_ts:
-            self.init_ts = trtt_min
+        self.losses = np.array([(i[0] - self.init_ts, i[1]) for i in loss_points])
+        self.retrans = np.array([(i[0] - self.init_ts, i[1]) for i in retrans_points])
+        self.sretrans = np.array([(i[0] - self.init_ts, i[1]) for i in sr_points])
+        self.dsacks = np.array([(i[0] - self.init_ts, i[1]) for i in dsack_points])
 
     def generate_offsets(self):
         offset_points = []
@@ -216,10 +244,10 @@ class Flow:
         if tokens[1] == "tcp_mark_skb_lost()":
             sk = tokens[2]
             if self.sk != sk:
-                return None
+                return reo_wnd_used
             
             if reo_wnd_used == None:
-                return None
+                return reo_wnd_used
             
             skb = tokens[3]
             sport = int(tokens[4])
@@ -233,8 +261,8 @@ class Flow:
             
             loss_points.append((ts_ns,
                 LossEvent(skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd_used, waiting)))
-            print(f"Loss. {skb} {rack_rtt_us + reo_wnd_used} {waiting} {gso_segs}, {lost_bytes}")
-            return None
+            # print(f"Loss. {ts_ns} {skb} {rack_rtt_us + reo_wnd_used} {waiting} {gso_segs}, {lost_bytes}")
+            return reo_wnd_used
 
     def parse_tcp_retransmit_skb(self, tokens, retrans_points):
         ts_ns = int(tokens[0])
@@ -247,9 +275,11 @@ class Flow:
             skb = tokens[3]
             left = tokens[4]
             right = tokens[5]
+            segavail = int(tokens[7])
+            segs = int(tokens[8])
             
             retrans_points.append((ts_ns,
-                RetransmissionEvent(skb, left, right)))
+                RetransmissionEvent(skb, left, right, segavail, segs)))
             # print(f"Retransmit. {skb} {left} {right}")
             return
         
@@ -266,9 +296,9 @@ class Flow:
         if tokens[2] == "returns" and tokens[3] == "true":
             if len(dsack_points) == 0:
                 return
-            last_dsack = dsack_points.pop()
+            (_, last_dsack) = dsack_points.pop()
             # print(f"SP true. {last_dsack}")
-            sr_points.append((ts_ns, last_dsack[1], last_dsack[2]))
+            sr_points.append((ts_ns, last_dsack))
             return
         
         sk = tokens[2]
@@ -278,25 +308,87 @@ class Flow:
         # DSACK event follows network byte order
         left = switch_endian(tokens[3])
         right = switch_endian(tokens[4])
-        dsack_points.append((ts_ns, left, right))
+        dsack_points.append((ts_ns, Segment(left, right)))
         # print(f"Current SP. {dsack_points[-1]}")
         return
     
     def analyze_spurious_retrans(self):
-        total_sr_segs = 0
-        for (sr_ts_ns, sr_left, sr_right) in self.sretrans:
-            found_retrans = None
-            for (r_ts_ns, retrans) in self.retrans:
-                if retrans.left == sr_left:
-                    found_retrans = retrans
+        for (loss_ts_ns, loss) in self.losses:
+            print(f"Loss. {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting}")
+        for (retrans_ts_ns, retrans) in self.retrans:
+            print(f"Retx. {retrans_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right} {retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}")
+
+        print("")
+        partial_segments = []
+
+        # Map retransmissions to loss events
+        for (r_ts_ns, retrans) in self.retrans:
+            print(f"Retx. {r_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right} {retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}", end=" ", flush=True)
+            for (loss_ts_ns, loss) in self.losses:
+                if retrans.skb == loss.skb:
+                    if retrans.segsent == loss.gso_segs:
+                        retrans.loss_event = loss
+                        loss.seg_left = retrans.segment.left
+                        loss.seg_right = retrans.segment.right
+                        print(f"Full Matched. {retrans.loss_event.skb}", flush=True)
+                        break
+                    else:
+                        new_left = padded_hex(int(retrans.segment.left, 16) + retrans.segsent * mss)
+                        new_segment = Segment(new_left, retrans.segment.right)
+                        partial_segments.append((new_segment, loss, loss.gso_segs - retrans.segsent))
+                        retrans.loss_event = loss
+                        loss.seg_left = retrans.segment.left
+                        loss.seg_right = new_segment.right
+                        print(f"Head Matched. {retrans.loss_event.skb} remained={loss.gso_segs - retrans.segsent}", flush=True)
+                        break
+
+            if retrans.loss_event != None:
+                continue
+
+            for (partial_segment, new_loss, segremained) in partial_segments:
+                # This partial segment is already taken
+                if segremained == 0:
+                    continue
+
+                if retrans.segment.right == partial_segment.right and \
+                    retrans.segment.left == partial_segment.left:
+                    if retrans.segsent == segremained:
+                        retrans.loss_event = new_loss
+                        loss.seg_right = retrans.segment.right
+                        print(f"Tail Matched. {retrans.loss_event.skb}", flush=True)
+                        break
+                    else:
+                        new_left = padded_hex(int(retrans.segment.left, 16) + retrans.segsent * mss)
+                        new_segment = Segment(new_left, retrans.segment.right)
+                        partial_segments.append((new_segment, loss, segremained - retrans.segsent))
+                        retrans.loss_event = new_loss
+                        loss.seg_right = new_segment.right
+                        print(f"Cont Matched. {retrans.loss_event.skb} remained={segremained - retrans.segsent}", flush=True)
+                        segremained = 0
+                        break
+
+        for (loss_ts_ns, loss) in self.losses:
+            print(f"Loss. {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting} {loss.seg_left} {loss.seg_right}")
+
+        for (sr_ts_ns, segment) in self.sretrans:
+            (found_loss_ts_ns, found_loss) = (None, None)
+            for (loss_ts_ns, loss) in self.losses:
+                # If these values are None, the segments are once marked lost
+                # but acked before they are actually retransmitted (mainly due
+                # to the retransmissions are deferred)
+                if loss.seg_left == None or loss.seg_right == None:
+                    continue
+
+                if loss.seg_left <= segment.left and loss.seg_right >= segment.right:
+                    found_loss = loss
+                    found_loss_ts_ns = loss_ts_ns
                     break
-            sr_bytes = int(sr_right, 16) - int(sr_left, 16)
-            if found_retrans != None:
-                print(sr_ts_ns, sr_left, sr_right, sr_bytes, int(sr_bytes / 1398), found_retrans.skb)
+            sr_bytes = int(segment.right, 16) - int(segment.left, 16)
+            if found_loss != None:
+                print(f"Srtx. {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2} {found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {int((sr_ts_ns - found_loss_ts_ns) / 1_000)}")
             else:
-                print(sr_ts_ns, sr_left, sr_right, sr_bytes, int(sr_bytes / 1398))
-            total_sr_segs += sr_bytes / 1398
-        print(total_sr_segs)
+                print(f"Srtx. {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
+
 
 
 class IperfStat:
@@ -310,4 +402,10 @@ def switch_endian(hex_string):
     while len(hex_string) < 10:
         hex_string = "0x0" + hex_string[2:]
     switched_hex_string = ''.join(reversed([hex_string[i:i+2] for i in range(2, len(hex_string), 2)]))
-    return '0x' + switched_hex_string
+    return "0x" + switched_hex_string
+
+def padded_hex(num):
+    hex_string = hex(num)
+    while len(hex_string) < 10:
+        hex_string = "0x0" + hex_string[2:]
+    return hex_string

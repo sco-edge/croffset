@@ -68,6 +68,7 @@ def main():
 
     if not args.no_bpftrace:
         (bpftrace_p, bpftrace_f) = start_bpftrace()
+        (socktrace_p, socktrace_f) = start_socktrace()
 
     time.sleep(2)
 
@@ -115,6 +116,7 @@ def main():
     if not args.no_bpftrace:
         # (bpftrace_map, loss_map) = end_bpftrace_stat(bpftrace_p, bpftrace_f, flows)
         (bpftrace_map, loss_map) = end_bpftrace(bpftrace_p, bpftrace_f, flows)
+        end_socktrace(socktrace_p, socktrace_f, flows)
     else:
         bpftrace_map = {}
 
@@ -314,6 +316,16 @@ def end_epping(epping_p, epping_f, flows):
                     epping_output_per_flow.write(f'{epping_map[i][0][j].astype(int)} {epping_map[i][1][j]}\n')
 
     return epping_map
+
+def start_socktrace():
+    with open(f'raw.sock.{experiment}.out', 'w') as f:
+        p = subprocess.Popen(["./sock.bt"], stdout=f, cwd='../..')
+
+    return (p, f)
+
+def end_socktrace(socktrace_p, socktrace_f, flows):
+    socktrace_p.kill()
+    return
 
 def start_bpftrace():
     # f = tempfile.NamedTemporaryFile()

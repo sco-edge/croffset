@@ -44,6 +44,10 @@ if __name__ == "__main__":
             hflow.parse_trtt_trace_cubic(trtt_file)
         hflow.generate_offsets()
     
+    sock_file = f"../data/{args.experiment}/raw.sock.{args.experiment}.out"
+    for hflow in hflows:
+        hflow.parse_sock_trace(sock_file)
+
     # Container flows
     cflows = []
     for i in range(0, args.container):
@@ -61,6 +65,10 @@ if __name__ == "__main__":
         elif args.cca == "cubic":
             cflow.parse_trtt_trace_cubic(trtt_file)
         cflow.generate_offsets()
+
+    sock_file = f"../data/{args.experiment}/raw.sock.{args.experiment}.out"
+    for cflow in cflows:
+        cflow.parse_sock_trace(sock_file)
 
     # Analyze spurious retransmissions
     for hflow in hflows:
