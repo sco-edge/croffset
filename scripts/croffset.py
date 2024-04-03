@@ -47,6 +47,13 @@ class LossEvent:
         self.reo_wnd = reo_wnd
         self.waiting = waiting
 
+class IperfStat:
+    throughput = None
+    retransmissions = None
+
+class NeperStat:
+    throughput = None
+
 class Flow:
     saddr = None
     sport = None
@@ -97,12 +104,6 @@ class Flow:
 
     def parse_trtt_trace_bbr(self, file):
         trtt_points = []
-        loss_points = []
-        retrans_points = []
-        sr_points = []
-        dsack_points = []
-
-        reo_wnd_used = False
 
         with open(file, 'r') as lines:
             lines.seek(0)
@@ -388,15 +389,6 @@ class Flow:
                 print(f"Srtx. {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2} {found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {int((sr_ts_ns - found_loss_ts_ns) / 1_000)}")
             else:
                 print(f"Srtx. {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
-
-
-
-class IperfStat:
-    throughput = None
-    retransmissions = None
-
-class NeperStat:
-    throughput = None
 
 def switch_endian(hex_string):
     while len(hex_string) < 10:
