@@ -5,6 +5,11 @@
 #include <linux/win_minmax.h>
 #include <net/tcp.h>
 
+BEGIN
+{
+	@delivery_flag = false;
+}
+
 kprobe:tcp_rack_detect_loss
 {
 	$sk = (struct sock *)arg0;
@@ -61,6 +66,7 @@ kprobe:tcp_check_dsack
 	$sp = (struct tcp_sack_block_wire *)arg2;
 	$start_seq = $sp[0].start_seq;
 	$end_seq = $sp[0].end_seq;
+	@delivery_flag = true;
 
 	// For unknown reasons, arg0 cannot be replaced with $sk
 	printf("%lld tcp_check_dsack() 0x%llx 0x%x 0x%x\n",
@@ -115,7 +121,11 @@ kprobe:tcp_fastretrans_alert
 }
 
 kprobe:tcp_rate_skb_delivered
+/@delivery_flag/
 {
+	//if (!$delivery_flag) {
+	//	return;
+	//}
 	$sk = (struct sock *)arg0;
 	$skb = (struct sk_buff *)arg1;
 	$cb = (struct tcp_skb_cb *)$skb->cb;
@@ -127,4 +137,5 @@ kprobe:tcp_rate_skb_delivered
 		   nsecs,
 		   $sk, $skb, $seq, $end_seq,
 		   $len);
+	@delivery_flag = false;
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+import copy
 import re
 import numpy as np
 
@@ -30,6 +31,7 @@ class RetransmissionEvent:
         self.segsent = min(segs, segavail)
 
 class LossEvent:
+    ts_ns = None # To distinguish the same skbs
     skb = None
     gso_segs = None
     lost_bytes = None
@@ -39,7 +41,8 @@ class LossEvent:
     seg_left = None
     seg_right = None
 
-    def __init__(self, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd, waiting):
+    def __init__(self, ts_ns, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd, waiting):
+        self.ts_ns = ts_ns
         self.skb = skb
         self.gso_segs = gso_segs
         self.lost_bytes = lost_bytes
@@ -119,7 +122,7 @@ class Flow:
 
         if len(trtt_points) == 0:
             print("parse_trtt_trace_bbr() parsing failed.")
-            return
+            return 0
         
         self.trtts = np.array(trtt_points)
         self.init_ts = int(min(np.min(self.trtts[:, 0]), np.min(self.brtts[:, 0])))
@@ -261,7 +264,7 @@ class Flow:
             eighth_srtt = int(tokens[11])
             
             loss_points.append((ts_ns,
-                LossEvent(skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd_used, waiting)))
+                LossEvent((ts_ns - self.init_ts), skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd_used, waiting)))
             # print(f"Loss. {ts_ns} {skb} {rack_rtt_us + reo_wnd_used} {waiting} {gso_segs}, {lost_bytes}")
             return reo_wnd_used
 
@@ -274,8 +277,8 @@ class Flow:
                 return
             
             skb = tokens[3]
-            left = tokens[4]
-            right = tokens[5]
+            left = padded_hex(int(tokens[4], 16))
+            right = padded_hex(int(tokens[5], 16))
             segavail = int(tokens[7])
             segs = int(tokens[8])
             
@@ -314,25 +317,42 @@ class Flow:
         return
     
     def analyze_spurious_retrans(self):
+        # skb is not an unique identifier.
+        loss_map = {}
         for (loss_ts_ns, loss) in self.losses:
-            print(f"Loss. {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting}")
+            print(f"Loss. {loss_ts_ns + self.init_ts:<14} {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting} {loss}")
+            if loss_map.get(loss.skb) == None:
+                loss_map[loss.skb] = [loss]
+            else:
+                loss_map[loss.skb].append(loss)
         for (retrans_ts_ns, retrans) in self.retrans:
-            print(f"Retx. {retrans_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right} {retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}")
+            print(f"Retx. {retrans_ts_ns + self.init_ts:<14} {retrans_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right} {retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}")
 
+        print("")
+        for key in loss_map.keys():
+            losses = " ".join(str(loss.ts_ns) for loss in loss_map[key])
+            print(key, losses)
         print("")
         partial_segments = []
 
         # Map retransmissions to loss events
         for (r_ts_ns, retrans) in self.retrans:
-            print(f"Retx. {r_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right} {retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}", end=" ", flush=True)
-            for (loss_ts_ns, loss) in self.losses:
-                if retrans.skb == loss.skb:
+            print(f"Retx. {r_ts_ns + self.init_ts:<14} {r_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right}",
+                  f"{retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}", end=" ", flush=True)
+            candidate_losses = loss_map.get(retrans.skb)
+            if candidate_losses != None and len(candidate_losses) != 0:
+                # print([f"{candidate_loss.ts_ns / 1_000_000_000:<11}" for candidate_loss in candidate_losses])
+                earlier_losses = [candidate for candidate in candidate_losses if candidate.ts_ns <= r_ts_ns]
+                
+                if len(earlier_losses) != 0:
+                    loss = min(earlier_losses, key=lambda x: x.ts_ns)
                     if retrans.segsent == loss.gso_segs:
-                        retrans.loss_event = loss
                         loss.seg_left = retrans.segment.left
                         loss.seg_right = retrans.segment.right
-                        print(f"Full Matched. {retrans.loss_event.skb}", flush=True)
-                        break
+                        retrans.loss_event = loss
+                        print(f"Full Matched. {retrans.loss_event.skb} {loss}", flush=True)
+                        candidate_losses.remove(loss)
+                        continue
                     else:
                         new_left = padded_hex(int(retrans.segment.left, 16) + retrans.segsent * mss)
                         new_segment = Segment(new_left, retrans.segment.right)
@@ -340,12 +360,9 @@ class Flow:
                         retrans.loss_event = loss
                         loss.seg_left = retrans.segment.left
                         loss.seg_right = new_segment.right
-                        print(f"Head Matched. {retrans.loss_event.skb} remained={loss.gso_segs - retrans.segsent}", flush=True)
-                        break
-
-            if retrans.loss_event != None:
-                continue
-
+                        print(f"Head Matched. {retrans.loss_event.skb} remained={loss.gso_segs - retrans.segsent}, new_left={new_left}", flush=True)
+                        continue
+            
             for (partial_segment, new_loss, segremained) in partial_segments:
                 # This partial segment is already taken
                 if segremained == 0:
@@ -355,21 +372,28 @@ class Flow:
                     retrans.segment.left == partial_segment.left:
                     if retrans.segsent == segremained:
                         retrans.loss_event = new_loss
-                        loss.seg_right = retrans.segment.right
+                        new_loss.seg_right = retrans.segment.right
                         print(f"Tail Matched. {retrans.loss_event.skb}", flush=True)
+                        candidate_losses = loss_map.get(new_loss.skb)
+                        # print(retrans.skb, [f"{candidate_loss.ts_ns / 1_000_000_000:<11}" for candidate_loss in candidate_losses])
+                        # print(new_loss.ts_ns)
+                        candidate_losses.remove(new_loss)
+                        partial_segments.remove((partial_segment, new_loss, segremained))
                         break
                     else:
                         new_left = padded_hex(int(retrans.segment.left, 16) + retrans.segsent * mss)
                         new_segment = Segment(new_left, retrans.segment.right)
-                        partial_segments.append((new_segment, loss, segremained - retrans.segsent))
+                        partial_segments.append((new_segment, new_loss, segremained - retrans.segsent))
                         retrans.loss_event = new_loss
-                        loss.seg_right = new_segment.right
+                        new_loss.seg_right = new_segment.right
                         print(f"Cont Matched. {retrans.loss_event.skb} remained={segremained - retrans.segsent}", flush=True)
                         segremained = 0
                         break
 
         for (loss_ts_ns, loss) in self.losses:
-            print(f"Loss. {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting} {loss.seg_left} {loss.seg_right}")
+            print(f"Loss. {loss_ts_ns + self.init_ts:<14} {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs}",
+                  f"{loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting}",
+                  f"{loss.seg_left} {loss.seg_right} {loss}")
 
         for (sr_ts_ns, segment) in self.sretrans:
             (found_loss_ts_ns, found_loss) = (None, None)
@@ -386,9 +410,9 @@ class Flow:
                     break
             sr_bytes = int(segment.right, 16) - int(segment.left, 16)
             if found_loss != None:
-                print(f"Srtx. {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2} {found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {int((sr_ts_ns - found_loss_ts_ns) / 1_000)}")
+                print(f"Srtx. {sr_ts_ns + self.init_ts:<14} {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2} {found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {int((sr_ts_ns - found_loss_ts_ns) / 1_000)}")
             else:
-                print(f"Srtx. {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
+                print(f"Srtx. {sr_ts_ns + self.init_ts:<14} {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
 
 def switch_endian(hex_string):
     while len(hex_string) < 10:
