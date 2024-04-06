@@ -2,6 +2,7 @@
 import croffset
 import plot
 import argparse
+import os
 
 saddr = "192.168.2.102"
 first_sport = 42000
@@ -19,6 +20,10 @@ if __name__ == "__main__":
     global args
     args = argparser.parse_args()
 
+    global iwd
+    iwd = os.getcwd()
+    os.chdir(os.path.join(iwd, '..', 'output', args.experiment))
+
     if args.cca != "bbr" and args.cca != "cubic":
         print(f"There is no such an algorithm \"{args.cca}\"")
         exit()
@@ -29,11 +34,12 @@ if __name__ == "__main__":
         hflow = croffset.Flow("TCP", saddr, first_sport + i, daddr, first_dport + i, "iperf")
         hflows.append(hflow)
 
-    brtt_file = f"../output/{args.experiment}/brtt.{args.experiment}.out"
+    brtt_file = f"brtt.{args.experiment}.out"
     for hflow in hflows:
-        hflow.parse_brtt_trace(brtt_file)
+        if not hflow.parse_brtt_trace(brtt_file):
+            exit(-1)
 
-    trtt_file = f"../output/{args.experiment}/trtt.{args.experiment}.out"
+    trtt_file = f"trtt.{args.experiment}.out"
     for hflow in hflows:
         if args.cca == "bbr":
             if not hflow.parse_trtt_trace_bbr(trtt_file):
@@ -43,7 +49,7 @@ if __name__ == "__main__":
                 exit(-1)
         hflow.generate_offsets()
     
-    sock_file = f"../output/{args.experiment}/sock.{args.experiment}.out"
+    sock_file = f"sock.{args.experiment}.out"
     for hflow in hflows:
         hflow.parse_sock_trace(sock_file)
 
@@ -53,11 +59,12 @@ if __name__ == "__main__":
         cflow = croffset.Flow("UDP", saddr, first_sport + i, daddr, first_dport + i, "iperf")
         cflows.append(cflow)
     
-    brtt_file = f"../output/{args.experiment}/brtt.{args.experiment}.out"
+    brtt_file = f"brtt.{args.experiment}.out"
     for cflow in cflows:
-        cflow.parse_brtt_trace(brtt_file)
+        if not cflow.parse_brtt_trace(brtt_file):
+            exit(-1)
 
-    trtt_file = f"../output/{args.experiment}/trtt.{args.experiment}.out"
+    trtt_file = f"trtt.{args.experiment}.out"
     for cflow in cflows:
         if args.cca == "bbr":
             if not cflow.parse_trtt_trace_bbr(trtt_file):
@@ -67,7 +74,7 @@ if __name__ == "__main__":
                 exit(-1)
         cflow.generate_offsets()
 
-    sock_file = f"../output/{args.experiment}/sock.{args.experiment}.out"
+    sock_file = f"sock.{args.experiment}.out"
     for cflow in cflows:
         cflow.parse_sock_trace(sock_file)
 
@@ -81,10 +88,9 @@ if __name__ == "__main__":
 
     # Plot
     if args.plot == True:
-        for hflow in hflows:
-            plot.plot_rtts(hflow, "plot_rtts_hflow.png", True)
-            plot.plot_offsets(hflow, "plot_offsets_hflow.png")
-        for cflow in cflows:
-            print(len(cflow.trtts))
-            plot.plot_rtts(cflow, "plot_rtts_cflow.png", True)
-            plot.plot_offsets(cflow, "plot_offsets_cflow.png")
+        for i, hflow in enumerate(hflows):
+            plot.plot_rtts(hflow, f"rtts_h{i}.png", True)
+            plot.plot_offsets(hflow, f"offsets_h{i}.png", True)
+        for i, cflow in enumerate(cflows):
+            plot.plot_rtts(cflow, f"rtts_c{i}.png", True)
+            plot.plot_offsets(cflow, f"offsets_c{i}.png", True)

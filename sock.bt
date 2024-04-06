@@ -8,6 +8,7 @@
 BEGIN
 {
 	@delivery_flag = false;
+	@clean_rtx_flag = false;
 }
 
 kprobe:tcp_rack_detect_loss
@@ -92,14 +93,14 @@ kprobe:tcp_retransmit_skb
 
 	// For unknown reasons, $cb->seq's LSB 2 bytes are corrupted
 	// (by mss size, typically 1398 = 0x0576),
-	// but $cb->end_seq works, so we derive $seq by $cb->end_seq - $len
+	// but $cb->end_seq works, so we derive $start_seq by $cb->end_seq - $len
 	$end_seq = $cb->end_seq;
 	$len = $skb->len;
-	$seq = $end_seq - $len;
+	$start_seq = $end_seq - $len;
 
 	printf("%lld tcp_retransmit_skb() 0x%llx 0x%llx 0x%x 0x%x   %d %d %d %d\n",
 		   nsecs,
-		   $sk, $skb, $seq, $end_seq,
+		   $sk, $skb, $start_seq, $end_seq,
 		   $len, $segs, $tcp_gso_segs, $tcp_gso_size);
 }
 
@@ -120,22 +121,77 @@ kprobe:tcp_fastretrans_alert
 		   $sk, $prior_snd_una, $num_dupack);
 }
 
-kprobe:tcp_rate_skb_delivered
+kprobe:tcp_clean_rtx_queue.constprop.0
+/arg2 != arg3/
+{
+	$sk = (struct sock *)arg0;
+	$skb = (struct sk_buff *)arg1;
+	$prior_fack = arg2;
+	$prior_snd_una = arg3;
+
+	@clean_rtx_flag = true;
+	printf("%lld tcp_clean_rtx_queue() 0x%llx 0x%llx 0x%x 0x%x\n",
+		   nsecs,
+		   $sk, $skb, $prior_fack, $prior_snd_una);
+}
+
+kprobe:tcp_sacktag_walk
 /@delivery_flag/
 {
-	//if (!$delivery_flag) {
-	//	return;
-	//}
+	$skb = (struct sk_buff *)arg0;
+	$sk = (struct sock *)arg1;
+	$start_seq = arg4;
+	$end_seq = arg5;
+
+	printf("%lld tcp_sacktag_walk() 0x%llx 0x%llx 0x%x 0x%x\n",
+		   nsecs,
+		   $sk, $skb, $start_seq, $end_seq);
+}
+
+kprobe:tcp_shifted_skb
+/@delivery_flag/
+{
+	$sk = (struct sock *)arg0;
+	$skb = (struct sk_buff *)arg1;
+	$prev = (struct sk_buff *)arg2;
+	$shifted = arg5;
+
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$start_seq = $cb->seq;
+	$end_seq = $start_seq + $shifted;
+
+	printf("%lld tcp_shifted_skb() 0x%llx 0x%llx 0x%llx %d   0x%x 0x%x\n",
+		   nsecs,
+		   $sk, $skb, $prev, $shifted,
+		   $start_seq, $end_seq);
+}
+
+kprobe:tcp_check_sack_reordering
+/@delivery_flag/
+{
+	$sk = (struct sock *)arg0;
+	$low_seq = arg1;
+	$ts = arg2;
+
+	printf("%lld tcp_check_sack_reordering() 0x%llx 0x%x %d\n",
+		   nsecs,
+		   $sk, $low_seq, $ts);	
+}
+
+kprobe:tcp_rate_skb_delivered
+/@delivery_flag || @clean_rtx_flag/
+{
 	$sk = (struct sock *)arg0;
 	$skb = (struct sk_buff *)arg1;
 	$cb = (struct tcp_skb_cb *)$skb->cb;
 	$end_seq = $cb->end_seq;
 	$len = $skb->len;
-	$seq = $end_seq - $len;
+	$start_seq = $end_seq - $len;
 
 	printf("%lld tcp_rate_skb_delivered() 0x%llx 0x%llx 0x%x 0x%x   %d\n",
 		   nsecs,
-		   $sk, $skb, $seq, $end_seq,
+		   $sk, $skb, $start_seq, $end_seq,
 		   $len);
 	@delivery_flag = false;
+	@clean_rtx_flag = false;
 }

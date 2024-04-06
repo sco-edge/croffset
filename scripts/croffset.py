@@ -68,6 +68,7 @@ class Flow:
     trtts = None     # Top RTTs measured at TCP
     offsets = None   # RTT offsets
     losses = None    # Packet loss events
+    delivered = None # Delivered events
     retrans = None   # Retransmission events
     sretrans = None  # Spurious retransmission events
     dsacks = None    # DSACK events
@@ -103,7 +104,12 @@ class Flow:
                 brtt_us = float(match.group(2)) * 1000
                 brtt_points.append((ts_ns, brtt_us))
 
+        if len(brtt_points) == 0:
+            print("parse_brtt_trace() parsing failed.")
+            return 0
+        
         self.brtts = np.array(brtt_points)
+        return len(self.brtts)
 
     def parse_trtt_trace_bbr(self, file):
         trtt_points = []
@@ -130,12 +136,14 @@ class Flow:
         # Regularize to init_ts
         self.brtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.brtts])
         self.trtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.trtts])
+        return len(self.trtts)
 
     def parse_sock_trace(self, file):
         loss_points = []
         retrans_points = []
         sr_points = []
         dsack_points = []
+        delivered_points = []
 
         reo_wnd_used = False
 
@@ -161,8 +169,14 @@ class Flow:
                     self.parse_tcp_check_dsack(tokens, sr_points, dsack_points)
                     continue
 
+                # Delivered events:
+                if tokens[1] == "tcp_rate_skb_delivered()":
+                    self.parse_tcp_rate_skb_delivered(tokens, delivered_points)
+                    continue
+
         self.losses = np.array([(i[0] - self.init_ts, i[1]) for i in loss_points])
         self.retrans = np.array([(i[0] - self.init_ts, i[1]) for i in retrans_points])
+        self.delivered = np.array([(i[0] - self.init_ts, i[1]) for i in delivered_points])
         self.sretrans = np.array([(i[0] - self.init_ts, i[1]) for i in sr_points])
         self.dsacks = np.array([(i[0] - self.init_ts, i[1]) for i in dsack_points])
 
@@ -289,7 +303,8 @@ class Flow:
         
         # Retransmission failed.
         if tokens[1] == "__tcp_retransmit_skb()":
-            retrans_points.pop()
+            if len(retrans_points) > 0:
+                retrans_points.pop()
             # print(f"Retransmit failed.")
             return            
 
@@ -315,33 +330,50 @@ class Flow:
         dsack_points.append((ts_ns, Segment(left, right)))
         # print(f"Current SP. {dsack_points[-1]}")
         return
-    
+
+    def parse_tcp_rate_skb_delivered(self, tokens, delivered_points):
+        ts_ns = int(tokens[0])
+
+        sk = tokens[2]
+        if self.sk != sk:
+            return
+
+        skb = tokens[3]
+        left = padded_hex(int(tokens[4], 16))
+        right = padded_hex(int(tokens[5], 16))
+        delivered_points.append((ts_ns, Segment(left, right)))
+        return        
+
     def analyze_spurious_retrans(self):
         # skb is not an unique identifier.
         loss_map = {}
+        partial_segments = []
+
         for (loss_ts_ns, loss) in self.losses:
-            print(f"Loss. {loss_ts_ns + self.init_ts:<14} {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting} {loss}")
+            # print(f"Loss. {loss_ts_ns + self.init_ts:<14} {loss_ts_ns / 1_000_000_000:<11}",
+            #       f"{loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us}",
+            #       f"{loss.reo_wnd} {loss.waiting} {loss}")
             if loss_map.get(loss.skb) == None:
                 loss_map[loss.skb] = [loss]
             else:
                 loss_map[loss.skb].append(loss)
-        for (retrans_ts_ns, retrans) in self.retrans:
-            print(f"Retx. {retrans_ts_ns + self.init_ts:<14} {retrans_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right} {retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}")
-
-        print("")
-        for key in loss_map.keys():
-            losses = " ".join(str(loss.ts_ns) for loss in loss_map[key])
-            print(key, losses)
-        print("")
-        partial_segments = []
+        # for (retrans_ts_ns, retrans) in self.retrans:
+        #     print(f"Retx. {retrans_ts_ns + self.init_ts:<14} {retrans_ts_ns / 1_000_000_000:<11}",
+        #           f"{retrans.skb} {retrans.segment.left} {retrans.segment.right}",
+        #           f"{retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}")
+        # print("")
+        # for key in loss_map.keys():
+        #     losses = " ".join(str(loss.ts_ns) for loss in loss_map[key])
+        #     print(key, losses)
+        # print("")        
 
         # Map retransmissions to loss events
         for (r_ts_ns, retrans) in self.retrans:
-            print(f"Retx. {r_ts_ns + self.init_ts:<14} {r_ts_ns / 1_000_000_000:<11} {retrans.skb} {retrans.segment.left} {retrans.segment.right}",
-                  f"{retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}", end=" ", flush=True)
+            # print(f"Retx. {r_ts_ns + self.init_ts:<14} {r_ts_ns / 1_000_000_000:<11}",
+            #       f"{retrans.skb} {retrans.segment.left} {retrans.segment.right}",
+            #       f"{retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}", end=" ", flush=True)
             candidate_losses = loss_map.get(retrans.skb)
             if candidate_losses != None and len(candidate_losses) != 0:
-                # print([f"{candidate_loss.ts_ns / 1_000_000_000:<11}" for candidate_loss in candidate_losses])
                 earlier_losses = [candidate for candidate in candidate_losses if candidate.ts_ns <= r_ts_ns]
                 
                 if len(earlier_losses) != 0:
@@ -350,7 +382,7 @@ class Flow:
                         loss.seg_left = retrans.segment.left
                         loss.seg_right = retrans.segment.right
                         retrans.loss_event = loss
-                        print(f"Full Matched. {retrans.loss_event.skb} {loss}", flush=True)
+                        # print(f"Full Matched. {retrans.loss_event.skb} {loss}", flush=True)
                         candidate_losses.remove(loss)
                         continue
                     else:
@@ -360,7 +392,7 @@ class Flow:
                         retrans.loss_event = loss
                         loss.seg_left = retrans.segment.left
                         loss.seg_right = new_segment.right
-                        print(f"Head Matched. {retrans.loss_event.skb} remained={loss.gso_segs - retrans.segsent}, new_left={new_left}", flush=True)
+                        # print(f"Head Matched. {retrans.loss_event.skb}", flush=True)
                         continue
             
             for (partial_segment, new_loss, segremained) in partial_segments:
@@ -373,10 +405,8 @@ class Flow:
                     if retrans.segsent == segremained:
                         retrans.loss_event = new_loss
                         new_loss.seg_right = retrans.segment.right
-                        print(f"Tail Matched. {retrans.loss_event.skb}", flush=True)
+                        # print(f"Tail Matched. {retrans.loss_event.skb}", flush=True)
                         candidate_losses = loss_map.get(new_loss.skb)
-                        # print(retrans.skb, [f"{candidate_loss.ts_ns / 1_000_000_000:<11}" for candidate_loss in candidate_losses])
-                        # print(new_loss.ts_ns)
                         candidate_losses.remove(new_loss)
                         partial_segments.remove((partial_segment, new_loss, segremained))
                         break
@@ -386,14 +416,16 @@ class Flow:
                         partial_segments.append((new_segment, new_loss, segremained - retrans.segsent))
                         retrans.loss_event = new_loss
                         new_loss.seg_right = new_segment.right
-                        print(f"Cont Matched. {retrans.loss_event.skb} remained={segremained - retrans.segsent}", flush=True)
+                        # print(f"Cont Matched. {retrans.loss_event.skb} remained={segremained - retrans.segsent}", flush=True)
                         segremained = 0
                         break
 
-        for (loss_ts_ns, loss) in self.losses:
-            print(f"Loss. {loss_ts_ns + self.init_ts:<14} {loss_ts_ns / 1_000_000_000:<11} {loss.skb} {loss.gso_segs}",
-                  f"{loss.lost_bytes} {loss.rack_rtt_us} {loss.reo_wnd} {loss.waiting}",
-                  f"{loss.seg_left} {loss.seg_right} {loss}")
+        # for (loss_ts_ns, loss) in self.losses:
+        #     print(f"Loss. {loss_ts_ns + self.init_ts:<14} {loss_ts_ns / 1_000_000_000:<11}",
+        #           f"{loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us}",
+        #           f"{loss.reo_wnd} {loss.waiting} {loss.seg_left} {loss.seg_right} {loss}")
+
+        post_sr = {}
 
         for (sr_ts_ns, segment) in self.sretrans:
             (found_loss_ts_ns, found_loss) = (None, None)
@@ -410,9 +442,64 @@ class Flow:
                     break
             sr_bytes = int(segment.right, 16) - int(segment.left, 16)
             if found_loss != None:
-                print(f"Srtx. {sr_ts_ns + self.init_ts:<14} {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2} {found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {int((sr_ts_ns - found_loss_ts_ns) / 1_000)}")
-            else:
-                print(f"Srtx. {sr_ts_ns + self.init_ts:<14} {sr_ts_ns / 1_000_000_000:<11} {segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
+                # print(f"Srtx. {sr_ts_ns + self.init_ts:<14} {sr_ts_ns / 1_000_000_000:<11}",
+                #       f"{segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}",
+                #       f"{found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd}",
+                #       f"{found_loss.waiting} {int((sr_ts_ns - found_loss_ts_ns) / 1_000)}")
+                
+                if found_loss.seg_left != None and found_loss.seg_right != None:
+                    for (delivered_ts_ns, delivered) in self.delivered:
+                        if delivered.seglen == 0:
+                            continue
+                        intersection = intersection_segs(delivered.left, delivered.right, segment.left, segment.right)
+                        if intersection is None:
+                            continue
+                        if not (intersection[0], intersection[1]) in post_sr:
+                            post_sr[(intersection[0], intersection[1])] = (delivered_ts_ns, found_loss)
+            # else:
+            #     print(f"Srtx. {sr_ts_ns + self.init_ts:<14} {sr_ts_ns / 1_000_000_000:<11}",
+            #           f"{segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
+
+        # print("")
+        # for (delivered_ts_ns, delivered) in self.delivered:
+        #     print(f"Dlvd. {delivered_ts_ns + self.init_ts:<14} {delivered_ts_ns / 1_000_000_000:<11}",
+        #           f"{delivered.left} {delivered.right}",
+        #           f"{delivered.bytelen} {delivered.seglen}")
+        
+        print(len(post_sr))
+        for key in post_sr.keys():
+            segment = Segment(key[0], key[1])
+            (delivered_ts_ns, found_loss) = post_sr[key]
+            diff = delivered_ts_ns - found_loss.ts_ns
+            (left_offset, right_offset) = self.relevant_offsets(found_loss.ts_ns)
+            print(f"SR: {found_loss.seg_left} {found_loss.seg_right}",
+                    f"{segment.left} {segment.right} {segment.seglen}",
+                    f"{found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {diff / 1_000}",
+                    f"{found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000}",
+                    f"{found_loss.ts_ns + self.init_ts} {left_offset[0] + self.init_ts} {left_offset[1]}",
+                    f"{right_offset[0] + self.init_ts} {right_offset[1]}")
+            
+            # lateness = found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000
+            # (ts, offset) = self.relevant_offset(found_loss.ts_ns)
+            # print(f"SR: {self.sk} {segment.seglen}",
+            #         f"{lateness:.3} {found_loss.ts_ns} {offset:.3}")
+            
+    def relevant_offsets(self, ts):
+        befores = [(offset_ts, offset) for (offset_ts, offset) in self.offsets if offset_ts <= ts]
+        if len(self.offsets) >= len(befores):
+            next = self.offsets[len(befores)]
+            return (max(befores, key=lambda x: x[0]), next)
+        else:
+            return (max(befores, key=lambda x: x[0]), max(befores, key=lambda x: x[0]))
+
+def intersection_segs(left1, right1, left2, right2):
+    left_max = max(int(left1, 16), int(left2, 16))
+    right_min = min(int(right1, 16), int(right2, 16))
+
+    if left_max >= right_min:
+        return None
+    else:
+        return padded_hex(left_max), padded_hex(right_min)
 
 def switch_endian(hex_string):
     while len(hex_string) < 10:
