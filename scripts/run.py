@@ -303,6 +303,13 @@ def start_instruments(interface):
                                   stdout=trtt_f, cwd=os.path.join(iwd, '..'))
     instrument_files.append(trtt_f)
     instrument_procs.append(trtt_p)
+
+    # trtt for rack
+    with open(f'trtt_rack.{experiment}.out', 'w') as trtt_rack_f:
+        trtt_rack_p = subprocess.Popen(["./trtt_rack.bt"],
+                                  stdout=trtt_rack_f, cwd=os.path.join(iwd, '..'))
+    instrument_files.append(trtt_rack_f)
+    instrument_procs.append(trtt_rack_p)
     
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:

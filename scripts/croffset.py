@@ -66,7 +66,10 @@ class Flow:
     init_ts = None   # Initial timestamp
     brtts = None     # Bottom RTTs measured at XDP-TC
     trtts = None     # Top RTTs measured at TCP
-    offsets = None   # RTT offsets
+    rrtts = None     # RTTs measured at RACK
+    offsets = None   # RTT offsets (trtt - brtt)
+    offsets2 = None  # RTT offsets (rrtt - brtt)
+    offsets3 = None  # RTT offsets (rrtt - trtt)
     losses = None    # Packet loss events
     delivered = None # Delivered events
     retrans = None   # Retransmission events
@@ -138,6 +141,31 @@ class Flow:
         self.trtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.trtts])
         return len(self.trtts)
 
+    def parse_rrtt_trace(self, file):
+        rrtt_points = []
+
+        with open(file, 'r') as lines:
+            lines.seek(0)
+            for l in lines:
+                tokens = l.rstrip().split()
+                if len(tokens) < 2:
+                    continue
+
+                # Top RTT events
+                if tokens[1] == "tcp_rack_advance()":
+                    self.parse_tcp_rack_advance(tokens, rrtt_points)
+                    continue
+
+        if len(rrtt_points) == 0:
+            print("parse_rrtt_trace() parsing failed.")
+            return 0
+        
+        self.rrtts = np.array(rrtt_points)
+
+        # Regularize to init_ts
+        self.rrtts = np.array([(i[0] - self.init_ts, i[1], i[2]) for i in self.rrtts])
+        return len(self.rrtts)
+    
     def parse_sock_trace(self, file):
         loss_points = []
         retrans_points = []
@@ -211,9 +239,65 @@ class Flow:
                 continue
             else:
                 # print(trtt_ts_ns, "Case 3", trtt_us, self.brtts[current][1], trtt_us - self.brtts[current][1])
+                
+                # ** CAUTION **
+                # This commented code tries to sample only the diffs between trtt and brtt timestamp are bounded
+                # But it does not work.
+                #
+                # if trtt_ts_ns - self.brtts[current][0] < 20000:
+                #     print(f"{trtt_ts_ns} {self.brtts[current][0]} {trtt_ts_ns - self.brtts[current][0]}",
+                #           f"{trtt_us} {self.brtts[current][1]} {trtt_us - self.brtts[current][1]}")
+                #     offset_points.append((trtt_ts_ns, trtt_us - self.brtts[current][1]))
+
                 offset_points.append((trtt_ts_ns, trtt_us - self.brtts[current][1]))
 
         self.offsets = np.array(offset_points)
+
+    def generate_offsets2(self):
+        offset_points = []
+        current = 0
+        for (rrtt_ts_ns, rrtt_us, rrtt_min) in self.rrtts:
+            if rrtt_ts_ns < self.brtts[current][0]:
+                continue
+
+            while True:
+                if current + 1 >= len(self.brtts):
+                    break
+                if rrtt_ts_ns >= self.brtts[current][0] and \
+                    rrtt_ts_ns < self.brtts[current + 1][0]:
+                    break
+                current += 1
+
+            # If brtt reaches the last element
+            if current + 1 >= len(self.brtts):
+                continue
+            else:
+                offset_points.append((rrtt_ts_ns, rrtt_us - self.brtts[current][1]))
+
+        self.offsets2 = np.array(offset_points)
+
+    def generate_offsets3(self):
+        offset_points = []
+        current = 0
+        for (rrtt_ts_ns, rrtt_us, rrtt_min) in self.rrtts:
+            if rrtt_ts_ns < self.trtts[current][0]:
+                continue
+
+            while True:
+                if current + 1 >= len(self.trtts):
+                    break
+                if rrtt_ts_ns >= self.trtts[current][0] and \
+                    rrtt_ts_ns < self.trtts[current + 1][0]:
+                    break
+                current += 1
+
+            # If brtt reaches the last element
+            if current + 1 >= len(self.trtts):
+                continue
+            else:
+                offset_points.append((rrtt_ts_ns, rrtt_us - self.trtts[current][1]))
+
+        self.offsets3 = np.array(offset_points)
 
     def parse_bbr_update_model(self, tokens, trtt_points):
         sport = int(tokens[6])
@@ -235,6 +319,20 @@ class Flow:
         trtt_points.append((ts_ns, trtt_us))
         return
     
+    def parse_tcp_rack_advance(self, tokens, rrtt_points):
+        sport = int(tokens[2])
+        if self.sport != sport:
+            return None
+
+        ts_ns = int(tokens[0])
+        rtt_us = int(tokens[5])
+        tcp_min_rtt = int(tokens[6])
+
+        if rtt_us < tcp_min_rtt:
+            return None
+        rrtt_points.append((ts_ns, rtt_us, tcp_min_rtt))
+        return
+
     def parse_loss_event(self, tokens, loss_points, reo_wnd_used):
         ts_ns = int(tokens[0])
         
@@ -486,11 +584,18 @@ class Flow:
             
     def relevant_offsets(self, ts):
         befores = [(offset_ts, offset) for (offset_ts, offset) in self.offsets if offset_ts <= ts]
-        if len(self.offsets) >= len(befores):
+        if len(self.offsets) >= len(befores) + 1:
             next = self.offsets[len(befores)]
             return (max(befores, key=lambda x: x[0]), next)
         else:
             return (max(befores, key=lambda x: x[0]), max(befores, key=lambda x: x[0]))
+
+    def retrans_segments(self):
+        num_segs = 0
+        for retrans_ts_ns, retrans in self.retrans:
+            num_segs += retrans.segsent
+
+        return num_segs
 
 def intersection_segs(left1, right1, left2, right2):
     left_max = max(int(left1, 16), int(left2, 16))

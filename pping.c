@@ -994,6 +994,8 @@ static void print_ns_datetime(FILE *stream, __u64 monotonic_ns)
 
 static void print_ns_raw(FILE *stream, __u64 monotonic_ns)
 {
+	//__u64 ts = convert_monotonic_to_realtime(monotonic_ns);
+	//fprintf(stream, "%lld", ts);
 	fprintf(stream, "%lld", monotonic_ns);
 }
 

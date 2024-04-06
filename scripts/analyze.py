@@ -40,6 +40,7 @@ if __name__ == "__main__":
             exit(-1)
 
     trtt_file = f"trtt.{args.experiment}.out"
+    rrtt_file = f"trtt_rack.{args.experiment}.out"
     for hflow in hflows:
         if args.cca == "bbr":
             if not hflow.parse_trtt_trace_bbr(trtt_file):
@@ -47,6 +48,8 @@ if __name__ == "__main__":
         elif args.cca == "cubic":
             if not hflow.parse_trtt_trace_cubic(trtt_file):
                 exit(-1)
+        if not hflow.parse_rrtt_trace(rrtt_file):
+            exit(-1)
         hflow.generate_offsets()
     
     sock_file = f"sock.{args.experiment}.out"
@@ -65,6 +68,7 @@ if __name__ == "__main__":
             exit(-1)
 
     trtt_file = f"trtt.{args.experiment}.out"
+    rrtt_file = f"trtt_rack.{args.experiment}.out"
     for cflow in cflows:
         if args.cca == "bbr":
             if not cflow.parse_trtt_trace_bbr(trtt_file):
@@ -72,11 +76,16 @@ if __name__ == "__main__":
         elif args.cca == "cubic":
             if not cflow.parse_trtt_trace_cubic(trtt_file):
                 exit(-1)
+        if not cflow.parse_rrtt_trace(rrtt_file):
+            exit(-1)
         cflow.generate_offsets()
+        cflow.generate_offsets2()
+        cflow.generate_offsets3()
 
     sock_file = f"sock.{args.experiment}.out"
     for cflow in cflows:
         cflow.parse_sock_trace(sock_file)
+        print(cflow.retrans_segments())
 
     print("parsing done.")
 
@@ -91,6 +100,10 @@ if __name__ == "__main__":
         for i, hflow in enumerate(hflows):
             plot.plot_rtts(hflow, f"rtts_h{i}.png", True)
             plot.plot_offsets(hflow, f"offsets_h{i}.png", True)
+            plot.plot_offsets2(hflow, f"offsets2_h{i}.png", True)
+            plot.plot_offsets3(hflow, f"offsets3_h{i}.png", True)
         for i, cflow in enumerate(cflows):
             plot.plot_rtts(cflow, f"rtts_c{i}.png", True)
             plot.plot_offsets(cflow, f"offsets_c{i}.png", True)
+            plot.plot_offsets2(cflow, f"offsets2_c{i}.png", True)
+            plot.plot_offsets3(cflow, f"offsets3_c{i}.png", True)
