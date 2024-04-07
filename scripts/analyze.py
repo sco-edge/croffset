@@ -3,11 +3,25 @@ import croffset
 import plot
 import argparse
 import os
+import json
 
 saddr = "192.168.2.102"
 first_sport = 42000
 daddr = "192.168.2.103"
 first_dport = 5200
+
+def identify_flows(experiment):
+    with open(f"summary.{experiment}.json", 'r') as file:
+        summary = json.load(file)
+        host_index = 0
+        while (f"h{host_index}" in summary):
+            host_index += 1
+        
+        container_index = 0
+        while (f"c{container_index}" in summary):
+            container_index += 1
+
+    return (host_index, container_index)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
@@ -28,9 +42,11 @@ if __name__ == "__main__":
         print(f"There is no such an algorithm \"{args.cca}\"")
         exit()
 
+    (host, container) = identify_flows(args.experiment)
+
     # Host flows
     hflows = []
-    for i in range(0, args.host):
+    for i in range(0, host):
         hflow = croffset.Flow("TCP", saddr, first_sport + i, daddr, first_dport + i, "iperf")
         hflows.append(hflow)
 
@@ -51,14 +67,17 @@ if __name__ == "__main__":
         if not hflow.parse_rrtt_trace(rrtt_file):
             exit(-1)
         hflow.generate_offsets()
+        hflow.generate_offsets2()
+        hflow.generate_offsets3()
     
     sock_file = f"sock.{args.experiment}.out"
     for hflow in hflows:
         hflow.parse_sock_trace(sock_file)
+        print(hflow.retrans_segments())
 
     # Container flows
     cflows = []
-    for i in range(0, args.container):
+    for i in range(0, container):
         cflow = croffset.Flow("UDP", saddr, first_sport + i, daddr, first_dport + i, "iperf")
         cflows.append(cflow)
     
@@ -98,12 +117,12 @@ if __name__ == "__main__":
     # Plot
     if args.plot == True:
         for i, hflow in enumerate(hflows):
-            plot.plot_rtts(hflow, f"rtts_h{i}.png", True)
-            plot.plot_offsets(hflow, f"offsets_h{i}.png", True)
-            plot.plot_offsets2(hflow, f"offsets2_h{i}.png", True)
-            plot.plot_offsets3(hflow, f"offsets3_h{i}.png", True)
+            plot.plot_rtts(hflow, f"rtts_h{i}", True)
+            plot.plot_offsets(hflow, f"offsets_h{i}", True)
+            plot.plot_offsets2(hflow, f"offsets2_h{i}", True)
+            plot.plot_offsets3(hflow, f"offsets3_h{i}", True)
         for i, cflow in enumerate(cflows):
-            plot.plot_rtts(cflow, f"rtts_c{i}.png", True)
-            plot.plot_offsets(cflow, f"offsets_c{i}.png", True)
-            plot.plot_offsets2(cflow, f"offsets2_c{i}.png", True)
-            plot.plot_offsets3(cflow, f"offsets3_c{i}.png", True)
+            plot.plot_rtts(cflow, f"rtts_c{i}", True)
+            plot.plot_offsets(cflow, f"offsets_c{i}", True)
+            plot.plot_offsets2(cflow, f"offsets2_c{i}", True)
+            plot.plot_offsets3(cflow, f"offsets3_c{i}", True)

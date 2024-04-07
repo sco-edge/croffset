@@ -69,10 +69,13 @@ kprobe:tcp_check_dsack
 	$end_seq = $sp[0].end_seq;
 	@delivery_flag = true;
 
+	$ack_skb = (struct sk_buff *)arg1;
+	$mark = $ack_skb->mark;
+
 	// For unknown reasons, arg0 cannot be replaced with $sk
-	printf("%lld tcp_check_dsack() 0x%llx 0x%x 0x%x\n",
+	printf("%lld tcp_check_dsack() 0x%llx 0x%x 0x%x %x\n",
 		   nsecs,
-		   arg0, $start_seq, $end_seq);
+		   arg0, $start_seq, $end_seq, $mark);
 }
 
 kretprobe:tcp_check_dsack

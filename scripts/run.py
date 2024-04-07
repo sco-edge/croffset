@@ -218,7 +218,7 @@ def main():
         measurement_starts = start_system_measurements()
         (instrument_files, instrument_procs) = start_instruments(interface)
         
-    time.sleep(2)
+    time.sleep(4)
 
     if args.app == "neper":
         (hflows, cflows) = run_neper_clients(int(args.host), int(args.container),
@@ -313,7 +313,9 @@ def start_instruments(interface):
     
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
-        sock_p = subprocess.Popen(["./sock.bt"],
+        # sock_p = subprocess.Popen(["./sock.bt"],
+        #                           stdout=sock_f, cwd=os.path.join(iwd, '..'))
+        sock_p = subprocess.Popen(["./ack.bt"],
                                   stdout=sock_f, cwd=os.path.join(iwd, '..'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)

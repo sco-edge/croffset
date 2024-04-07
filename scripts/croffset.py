@@ -330,6 +330,8 @@ class Flow:
 
         if rtt_us < tcp_min_rtt:
             return None
+        if rtt_us < tcp_min_rtt * 3:
+            print(f"{ts_ns} tcp_rack_advance() {sport} {rtt_us} {tcp_min_rtt}")
         rrtt_points.append((ts_ns, rtt_us, tcp_min_rtt))
         return
 
@@ -570,12 +572,12 @@ class Flow:
             (delivered_ts_ns, found_loss) = post_sr[key]
             diff = delivered_ts_ns - found_loss.ts_ns
             (left_offset, right_offset) = self.relevant_offsets(found_loss.ts_ns)
-            print(f"SR: {found_loss.seg_left} {found_loss.seg_right}",
-                    f"{segment.left} {segment.right} {segment.seglen}",
-                    f"{found_loss.rack_rtt_us} {found_loss.reo_wnd} {found_loss.waiting} {diff / 1_000}",
-                    f"{found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000}",
-                    f"{found_loss.ts_ns + self.init_ts} {left_offset[0] + self.init_ts} {left_offset[1]}",
-                    f"{right_offset[0] + self.init_ts} {right_offset[1]}")
+            print(f"SR: {found_loss.ts_ns + self.init_ts:.0f} {found_loss.seg_left} {found_loss.seg_right}",
+                    f"{segment.left} {segment.right} {segment.seglen:2}",
+                    f"{found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff / 1_000:.3f}",
+                    f"{found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000:.3f}",
+                    f"{found_loss.ts_ns + self.init_ts:.0f} {left_offset[0] + self.init_ts:.0f} {left_offset[1]:.3f}",
+                    f"{right_offset[0] + self.init_ts:.0f} {right_offset[1]:.3f}")
             
             # lateness = found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000
             # (ts, offset) = self.relevant_offset(found_loss.ts_ns)
