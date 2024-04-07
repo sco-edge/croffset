@@ -197,7 +197,10 @@ struct rtt_event {
 	__u64 rec_pkts;
 	__u64 rec_bytes;
 	bool match_on_egress;
-	__u8 reserved[7];
+	/* [sunj] using mark */
+	// __u8 reserved[7];
+	__u8 reserved[3];
+	__u32 mark;
 };
 
 /*

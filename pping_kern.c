@@ -47,6 +47,11 @@
 
 #define MAX_MEMCMP_SIZE 128
 
+/* [sunj] Using mark */
+struct meta_info {
+	__u32 mark;
+} __attribute__((aligned(4)));
+
 /*
  * Structs for map iteration programs
  * Copied from /tools/testing/selftest/bpf/progs/bpf_iter.h
@@ -1001,28 +1006,80 @@ static void send_map_full_event(void *ctx, struct packet_info *p_info,
 	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &me, sizeof(me));
 }
 
-static void send_rtt_event(void *ctx, __u64 rtt, struct flow_state *f_state,
-			   struct packet_info *p_info)
+// static void send_rtt_event(void *ctx, __u64 rtt, struct flow_state *f_state,
+// 			   struct packet_info *p_info)
+// {
+// 	if (!config.push_individual_events)
+// 		return;
+
+// 	struct rtt_event re = {
+// 		.event_type = EVENT_TYPE_RTT,
+// 		.timestamp = p_info->time,
+// 		.flow = p_info->pid.flow,
+// 		.padding = 0,
+// 		.rtt = rtt,
+// 		.min_rtt = f_state->min_rtt,
+// 		.sent_pkts = f_state->sent_pkts,
+// 		.sent_bytes = f_state->sent_bytes,
+// 		.rec_pkts = f_state->rec_pkts,
+// 		.rec_bytes = f_state->rec_bytes,
+// 		.match_on_egress = !p_info->is_ingress,
+// 		.mark = 0,
+// 		.reserved = { 0 },
+// 	};
+
+// 	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &re, sizeof(re));
+// }
+
+/* [sunj] Copy of send_rtt_event() keeping xdp_md */
+static void send_rtt_event_mark(void *ctx, __u64 rtt, struct flow_state *f_state,
+			   struct packet_info *p_info, __u32 mark)
 {
 	if (!config.push_individual_events)
 		return;
 
-	struct rtt_event re = {
-		.event_type = EVENT_TYPE_RTT,
-		.timestamp = p_info->time,
-		.flow = p_info->pid.flow,
-		.padding = 0,
-		.rtt = rtt,
-		.min_rtt = f_state->min_rtt,
-		.sent_pkts = f_state->sent_pkts,
-		.sent_bytes = f_state->sent_bytes,
-		.rec_pkts = f_state->rec_pkts,
-		.rec_bytes = f_state->rec_bytes,
-		.match_on_egress = !p_info->is_ingress,
-		.reserved = { 0 },
-	};
+	/* Check XDP gave us some data_meta */
+	if (p_info->is_ingress) {
 
-	bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &re, sizeof(re));
+		struct rtt_event re = {
+			.event_type = EVENT_TYPE_RTT,
+			.timestamp = p_info->time,
+			.flow = p_info->pid.flow,
+			.padding = 0,
+			.rtt = rtt,
+			.min_rtt = f_state->min_rtt,
+			.sent_pkts = f_state->sent_pkts,
+			.sent_bytes = f_state->sent_bytes,
+			.rec_pkts = f_state->rec_pkts,
+			.rec_bytes = f_state->rec_bytes,
+			.match_on_egress = !p_info->is_ingress,
+			// .mark = bpf_get_prandom_u32(),
+			.mark = mark,
+			.reserved = { 0 },
+		};
+
+		bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &re, sizeof(re));
+	} else {
+		struct rtt_event re = {
+			.event_type = EVENT_TYPE_RTT,
+			.timestamp = p_info->time,
+			.flow = p_info->pid.flow,
+			.padding = 0,
+			.rtt = rtt,
+			.min_rtt = f_state->min_rtt,
+			.sent_pkts = f_state->sent_pkts,
+			.sent_bytes = f_state->sent_bytes,
+			.rec_pkts = f_state->rec_pkts,
+			.rec_bytes = f_state->rec_bytes,
+			.match_on_egress = !p_info->is_ingress,
+			.mark = 0,
+			.reserved = { 0 },
+		};
+
+		bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &re, sizeof(re));
+
+	}
+
 }
 
 /*
@@ -1347,7 +1404,7 @@ static void pping_timestamp_packet(struct flow_state *f_state, void *ctx,
  */
 static void pping_match_packet(struct flow_state *f_state, void *ctx,
 			       struct packet_info *p_info,
-			       struct aggregated_stats *agg_stats)
+			       struct aggregated_stats *agg_stats, __u32 mark)
 {
 	__u64 rtt;
 	__u64 *p_ts;
@@ -1374,7 +1431,8 @@ static void pping_match_packet(struct flow_state *f_state, void *ctx,
 		f_state->min_rtt = rtt;
 	f_state->srtt = calculate_srtt(f_state->srtt, rtt);
 
-	send_rtt_event(ctx, rtt, f_state, p_info);
+	// send_rtt_event(ctx, rtt, f_state, p_info);
+	send_rtt_event_mark(ctx, rtt, f_state, p_info, mark);
 	aggregate_rtt(rtt, agg_stats);
 }
 
@@ -1435,7 +1493,7 @@ static void update_aggregate_stats(struct aggregated_stats **src_stats,
  * timestamp of the packet, tries to match packet against previous timestamps,
  * calculates RTTs and pushes messages to userspace as appropriate.
  */
-static void pping_parsed_packet(void *ctx, struct packet_info *p_info)
+static void pping_parsed_packet(void *ctx, struct packet_info *p_info, __u32 mark)
 {
 	struct dual_flow_state *df_state;
 	struct flow_state *fw_flow, *rev_flow;
@@ -1456,7 +1514,7 @@ static void pping_parsed_packet(void *ctx, struct packet_info *p_info)
 	rev_flow = get_reverse_flowstate_from_packet(df_state, p_info);
 	update_reverse_flowstate(ctx, p_info, rev_flow);
 	pping_match_packet(rev_flow, ctx, p_info,
-			   config.agg_by_dst ? dst_stats : src_stats);
+			   config.agg_by_dst ? dst_stats : src_stats, mark);
 
 	close_and_delete_flows(ctx, p_info, fw_flow, rev_flow);
 }
@@ -1486,10 +1544,10 @@ static void pping_tc(struct __sk_buff *ctx, bool is_ingress)
 	p_info->is_ingress = is_ingress;
 	p_info->ingress_ifindex = is_ingress ? ctx->ingress_ifindex : 0;
 
-	pping_parsed_packet(ctx, p_info);
+	pping_parsed_packet(ctx, p_info, 0);
 }
 
-static void pping_xdp(struct xdp_md *ctx)
+static void pping_xdp(struct xdp_md *ctx, __u32 mark)
 {
 	struct packet_info *p_info;
 	__u32 key = 0;
@@ -1504,7 +1562,7 @@ static void pping_xdp(struct xdp_md *ctx)
 	p_info->is_ingress = true;
 	p_info->ingress_ifindex = ctx->ingress_ifindex;
 
-	pping_parsed_packet(ctx, p_info);
+	pping_parsed_packet(ctx, p_info, mark);
 }
 
 static bool is_flow_old(struct network_tuple *flow, struct flow_state *f_state,
@@ -1560,21 +1618,57 @@ int pping_tc_egress(struct __sk_buff *skb)
 
 	return TC_ACT_UNSPEC;
 }
+// // Ingress path using TC-BPF
+// SEC("tc")
+// int pping_tc_ingress(struct __sk_buff *skb)
+// {
+// 	pping_tc(skb, true);
+
+// 	return TC_ACT_UNSPEC;
+// }
 
 // Ingress path using TC-BPF
 SEC("tc")
 int pping_tc_ingress(struct __sk_buff *skb)
 {
-	pping_tc(skb, true);
+	void *data      = (void *)(unsigned long)skb->data;
+	void *data_end  = (void *)(unsigned long)skb->data_end;
+	void *data_meta = (void *)(unsigned long)skb->data_meta;
+	struct meta_info *meta = data_meta;
 
-	return TC_ACT_UNSPEC;
+	/* Check XDP gave us some data_meta */
+	if (meta + 1 > data) {
+		skb->mark = 0;
+		 /* Skip "accept" if no data_meta is avail */
+		return TC_ACT_OK;
+	}
+
+	/* Hint: See func tc_cls_act_is_valid_access() for BPF_WRITE access */
+	skb->mark = meta->mark; /* Transfer XDP-mark to SKB-mark */
+
+	return TC_ACT_OK;
 }
 
 // Ingress path using XDP
 SEC("xdp")
 int pping_xdp_ingress(struct xdp_md *ctx)
 {
-	pping_xdp(ctx);
+	struct meta_info *meta;
+	void *data;
+	int ret;
+
+	ret = bpf_xdp_adjust_meta(ctx, -(int)sizeof(*meta));
+	if (ret < 0)
+		return XDP_ABORTED;
+
+	data = (void *)(unsigned long)ctx->data;
+	meta = (void *)(unsigned long)ctx->data_meta;
+	if (meta + 1 > data)
+		return XDP_ABORTED;
+	
+	meta->mark = bpf_get_prandom_u32();
+	// meta->mark = 17;
+	pping_xdp(ctx, meta->mark);
 
 	return XDP_PASS;
 }

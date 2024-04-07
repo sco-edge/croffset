@@ -42,6 +42,7 @@ static const char *__doc__ =
 	(1 * NS_PER_SECOND) // Update offset between CLOCK_MONOTONIC and CLOCK_REALTIME once per second
 
 #define PROG_INGRESS_TC "pping_tc_ingress"
+// #define PROG_INGRESS_TC_MARK "pping_tc_ingress_mark"
 #define PROG_INGRESS_XDP "pping_xdp_ingress"
 #define PROG_EGRESS_TC "pping_tc_egress"
 
@@ -1012,7 +1013,9 @@ static void print_event_standard(FILE *stream, const union pping_event *e)
 			ipproto_to_str(protostr, sizeof(protostr),
 				       e->rtt_event.flow.proto));
 		print_flow_ppvizformat(stream, &e->rtt_event.flow);
-		fprintf(stream, "\n");
+		/* [sunj] Using mark */
+		// fprintf(stream, "\n");
+		fprintf(stream, " %x\n", e->rtt_event.mark);
 	} else if (e->event_type == EVENT_TYPE_FLOW) {
 		// print_ns_datetime(stream, e->flow_event.timestamp);
 		print_ns_raw(stream, e->rtt_event.timestamp);
@@ -1977,41 +1980,74 @@ static int load_attach_bpfprogs(struct bpf_object **obj,
 		return err;
 	}
 
-	set_programs_to_load(*obj, config);
+	/* [sunj] We load both. */
+	// set_programs_to_load(*obj, config);
 
 	// Attach ingress prog
-	if (strcmp(config->ingress_prog, PROG_INGRESS_XDP) == 0) {
-		/* xdp_attach() loads 'obj' through libxdp */
-		err = xdp_attach(*obj, config->ingress_prog, config->ifindex,
-				 &config->xdp_prog, config->xdp_mode);
-		if (err) {
-			fprintf(stderr, "Failed attaching XDP program\n");
-			if (config->xdp_mode == XDP_MODE_NATIVE)
-				fprintf(stderr,
-					"%s may not have driver support for XDP, try --xdp-mode generic instead\n",
-					config->ifname);
-			else
-				fprintf(stderr,
-					"Try updating kernel or use --ingress-hook tc instead\n");
-		}
-	} else {
-		err = bpf_object__load(*obj);
-		if (err) {
-			fprintf(stderr, "Failed loading bpf programs in %s: %s\n",
-				config->object_path, get_libbpf_strerror(err));
-			return err;
-		}
-		err = tc_attach(*obj, config->ifindex, BPF_TC_INGRESS,
-				config->ingress_prog, &config->tc_ingress_opts,
-				&config->created_tc_hook);
-		config->ingress_prog_id = err;
+	/* xdp_attach() loads 'obj' through libxdp */
+	err = xdp_attach(*obj, config->ingress_prog, config->ifindex,
+				&config->xdp_prog, config->xdp_mode);
+	if (err) {
+		fprintf(stderr, "Failed attaching XDP program\n");
+		if (config->xdp_mode == XDP_MODE_NATIVE)
+			fprintf(stderr,
+				"%s may not have driver support for XDP, try --xdp-mode generic instead\n",
+				config->ifname);
+		else
+			fprintf(stderr,
+				"Try updating kernel or use --ingress-hook tc instead\n");
 	}
+
+	// err = bpf_object__load(*obj);
+	// if (err) {
+	// 	fprintf(stderr, "Failed loading bpf programs in %s: %s\n",
+	// 		config->object_path, get_libbpf_strerror(err));
+	// 	return err;
+	// }
+	err = tc_attach(*obj, config->ifindex, BPF_TC_INGRESS,
+			PROG_INGRESS_TC, &config->tc_ingress_opts,
+			&config->created_tc_hook);
+	config->ingress_prog_id = err;
 	if (err < 0) {
 		fprintf(stderr,
 			"Failed attaching ingress BPF program on interface %s: %s\n",
 			config->ifname, get_libbpf_strerror(err));
 		goto ingress_err;
 	}
+
+	// // Attach ingress prog
+	// if (strcmp(config->ingress_prog, PROG_INGRESS_XDP) == 0) {
+	// 	/* xdp_attach() loads 'obj' through libxdp */
+	// 	err = xdp_attach(*obj, config->ingress_prog, config->ifindex,
+	// 			 &config->xdp_prog, config->xdp_mode);
+	// 	if (err) {
+	// 		fprintf(stderr, "Failed attaching XDP program\n");
+	// 		if (config->xdp_mode == XDP_MODE_NATIVE)
+	// 			fprintf(stderr,
+	// 				"%s may not have driver support for XDP, try --xdp-mode generic instead\n",
+	// 				config->ifname);
+	// 		else
+	// 			fprintf(stderr,
+	// 				"Try updating kernel or use --ingress-hook tc instead\n");
+	// 	}
+	// } else {
+	// 	err = bpf_object__load(*obj);
+	// 	if (err) {
+	// 		fprintf(stderr, "Failed loading bpf programs in %s: %s\n",
+	// 			config->object_path, get_libbpf_strerror(err));
+	// 		return err;
+	// 	}
+	// 	err = tc_attach(*obj, config->ifindex, BPF_TC_INGRESS,
+	// 			config->ingress_prog, &config->tc_ingress_opts,
+	// 			&config->created_tc_hook);
+	// 	config->ingress_prog_id = err;
+	// }
+	// if (err < 0) {
+	// 	fprintf(stderr,
+	// 		"Failed attaching ingress BPF program on interface %s: %s\n",
+	// 		config->ifname, get_libbpf_strerror(err));
+	// 	goto ingress_err;
+	// }
 
 	// Attach egress prog
 	config->egress_prog_id = tc_attach(
