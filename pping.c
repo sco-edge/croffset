@@ -1015,7 +1015,8 @@ static void print_event_standard(FILE *stream, const union pping_event *e)
 		print_flow_ppvizformat(stream, &e->rtt_event.flow);
 		/* [sunj] Using mark */
 		// fprintf(stream, "\n");
-		fprintf(stream, " %x\n", e->rtt_event.mark);
+		fprintf(stream, " 0x%x %lld %lld\n",
+			e->rtt_event.mark, e->rtt_event.start, e->rtt_event.end);
 	} else if (e->event_type == EVENT_TYPE_FLOW) {
 		// print_ns_datetime(stream, e->flow_event.timestamp);
 		print_ns_raw(stream, e->rtt_event.timestamp);

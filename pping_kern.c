@@ -1033,7 +1033,7 @@ static void send_map_full_event(void *ctx, struct packet_info *p_info,
 
 /* [sunj] Copy of send_rtt_event() keeping xdp_md */
 static void send_rtt_event_mark(void *ctx, __u64 rtt, struct flow_state *f_state,
-			   struct packet_info *p_info, __u32 mark)
+			   struct packet_info *p_info, __u32 mark, __u64 start, __u64 end)
 {
 	if (!config.push_individual_events)
 		return;
@@ -1053,9 +1053,10 @@ static void send_rtt_event_mark(void *ctx, __u64 rtt, struct flow_state *f_state
 			.rec_pkts = f_state->rec_pkts,
 			.rec_bytes = f_state->rec_bytes,
 			.match_on_egress = !p_info->is_ingress,
-			// .mark = bpf_get_prandom_u32(),
-			.mark = mark,
 			.reserved = { 0 },
+			.mark = mark,
+			.start = start,
+			.end = end,
 		};
 
 		bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &re, sizeof(re));
@@ -1072,8 +1073,8 @@ static void send_rtt_event_mark(void *ctx, __u64 rtt, struct flow_state *f_state
 			.rec_pkts = f_state->rec_pkts,
 			.rec_bytes = f_state->rec_bytes,
 			.match_on_egress = !p_info->is_ingress,
-			.mark = 0,
 			.reserved = { 0 },
+			.mark = 0,
 		};
 
 		bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &re, sizeof(re));
@@ -1432,7 +1433,7 @@ static void pping_match_packet(struct flow_state *f_state, void *ctx,
 	f_state->srtt = calculate_srtt(f_state->srtt, rtt);
 
 	// send_rtt_event(ctx, rtt, f_state, p_info);
-	send_rtt_event_mark(ctx, rtt, f_state, p_info, mark);
+	send_rtt_event_mark(ctx, rtt, f_state, p_info, mark, *p_ts, p_info->time);
 	aggregate_rtt(rtt, agg_stats);
 }
 

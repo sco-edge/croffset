@@ -201,6 +201,8 @@ struct rtt_event {
 	// __u8 reserved[7];
 	__u8 reserved[3];
 	__u32 mark;
+	__u64 start;
+	__u64 end;
 };
 
 /*
