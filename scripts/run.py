@@ -35,11 +35,11 @@ def check_configuration():
     p = subprocess.Popen(kubectl_check_bbr, stdout=subprocess.PIPE)
     json_output = json.loads(p.stdout.read())
     if json_output.get("data") != None and json_output.get("data").get("enable-bbr") != None:
-        enable_bbr = bool(json_output.get("data").get("enable-bbr"))
-        if args.cca == "bbr" and enable_bbr != True:
+        enable_bbr = json_output.get("data").get("enable-bbr")
+        if args.cca == "bbr" and enable_bbr != "true":
             logging.error(f"enable_bbr = {enable_bbr} ({args.cca} is desired)")
             ret = False
-        elif args.cca != "bbr" and enable_bbr == True:
+        elif args.cca != "bbr" and enable_bbr == "true":
             logging.error(f"enable_bbr = {enable_bbr} ({args.cca} is desired)")
             ret = False
         else:
@@ -134,6 +134,7 @@ def summarize_statistics(hflows, cflows):
     retransmissions = []
     rtts = []
     
+    json_data["app"] = args.app
     json_data["cca"] = args.cca
     json_data["loss_detection"] = args.loss_detection
 
@@ -210,7 +211,7 @@ def main():
         server_pods = get_k8s_servers('iperf')
         client_pods = get_k8s_clients('iperf')
 
-    if len(server_pods[0]) == 0 or len(client_pods[0]) == 0:
+    if int(args.container) > 0 and (len(server_pods[0]) == 0 or len(client_pods[0])) == 0:
         print('Check that kubeconfig is properly set.')
         exit(-1)
 
@@ -313,10 +314,10 @@ def start_instruments(interface):
     
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
-        # sock_p = subprocess.Popen(["./sock.bt"],
-        #                           stdout=sock_f, cwd=os.path.join(iwd, '..'))
-        sock_p = subprocess.Popen(["./ack.bt"],
+        sock_p = subprocess.Popen(["./sock.bt"],
                                   stdout=sock_f, cwd=os.path.join(iwd, '..'))
+        # sock_p = subprocess.Popen(["./ack.bt"],
+        #                           stdout=sock_f, cwd=os.path.join(iwd, '..'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
 

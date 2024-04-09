@@ -5,6 +5,18 @@ import numpy as np
 
 mss = 1398
 
+class MeasuredRTT:
+    ts_ns = None
+    sent = None
+    acked = None
+    rtt = None
+
+    def __init__(self, ts_ns, sent, acked):
+        self.ts_ns = ts_ns
+        self.sent = sent
+        self.acked = acked
+        self.rtt = acked - sent
+
 class Segment:
     left = None
     right = None
@@ -64,6 +76,9 @@ class Flow:
     dport = None
     transport = None
     init_ts = None   # Initial timestamp
+    marked_brtts = None
+    marked_trtts = None
+    synced_offsets = None
     brtts = None     # Bottom RTTs measured at XDP-TC
     trtts = None     # Top RTTs measured at TCP
     rrtts = None     # RTTs measured at RACK
@@ -85,6 +100,10 @@ class Flow:
         self.daddr = daddr
         self.dport = dport
 
+        self.marked_brtts = {}
+        self.marked_trtts = {}
+        self.synced_offsets = []
+
         if app == "iperf":
             self.astat = IperfStat
         elif app == "neper":
@@ -95,7 +114,7 @@ class Flow:
     def parse_brtt_trace(self, file):
         brtt_points = []
         expr = re.compile(r"^(\d+?) (.+?) ms (.+?) ms " +
-                        f"{self.transport} {self.daddr}:{self.dport}\+{self.saddr}:{self.sport}$")
+                        f"{self.transport} {self.daddr}:{self.dport}\+{self.saddr}:{self.sport} (.+?) (.+?) (.+?)$")
         with open(file, 'r') as lines:
             lines.seek(0)
             for l in lines:
@@ -105,6 +124,11 @@ class Flow:
                 
                 ts_ns = int(match.group(1))
                 brtt_us = float(match.group(2)) * 1000
+                mark = padded_hex(int(match.group(4), 16))
+                start_us = int(match.group(5)) / 1000
+                end_us = int(match.group(6)) / 1000
+                measured_rtt = MeasuredRTT(ts_ns, start_us, end_us)
+                self.marked_brtts[mark] = measured_rtt
                 brtt_points.append((ts_ns, brtt_us))
 
         if len(brtt_points) == 0:
@@ -140,6 +164,14 @@ class Flow:
         self.brtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.brtts])
         self.trtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.trtts])
         return len(self.trtts)
+    
+    # Temporary
+    def parse_trtt_trace_cubic(self, file):
+        self.init_ts = int(np.min(self.brtts[:, 0]))
+
+        # Regularize to init_ts
+        self.brtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.brtts])
+        return self.init_ts
 
     def parse_rrtt_trace(self, file):
         rrtt_points = []
@@ -165,7 +197,37 @@ class Flow:
         # Regularize to init_ts
         self.rrtts = np.array([(i[0] - self.init_ts, i[1], i[2]) for i in self.rrtts])
         return len(self.rrtts)
-    
+
+    def parse_marked_trtt_trace(self, file):
+        rrtt_points = []
+
+        with open(file, 'r') as lines:
+            lines.seek(0)
+            current_mark = None
+            for l in lines:
+                tokens = l.rstrip().split()
+                if len(tokens) < 2:
+                    continue
+
+                if tokens[1] == "tcp_ack()":
+                    current_mark = padded_hex(int(tokens[3], 16))
+                    # print("current_mark:", current_mark)
+
+                # Top RTT events
+                if tokens[1] == "tcp_rack_advance()":
+                    self.parse_tcp_rack_advance(tokens, rrtt_points, current_mark)
+                    continue
+
+        if len(rrtt_points) == 0:
+            print("parse_rrtt_trace() parsing failed.")
+            return 0
+        
+        self.rrtts = np.array(rrtt_points)
+
+        # Regularize to init_ts
+        self.rrtts = np.array([(i[0] - self.init_ts, i[1], i[2]) for i in self.rrtts])
+        return len(self.rrtts)
+
     def parse_sock_trace(self, file):
         loss_points = []
         retrans_points = []
@@ -207,6 +269,44 @@ class Flow:
         self.delivered = np.array([(i[0] - self.init_ts, i[1]) for i in delivered_points])
         self.sretrans = np.array([(i[0] - self.init_ts, i[1]) for i in sr_points])
         self.dsacks = np.array([(i[0] - self.init_ts, i[1]) for i in dsack_points])
+
+        print(len(self.retrans))
+
+    def generate_synced_offsets(self, output):
+        with open(output, 'w') as file:
+            for mark in self.marked_brtts:
+                if mark not in self.marked_trtts:
+                    continue
+
+                trtts_at_current_mark = self.marked_trtts.get(mark)
+                for trtt_rack in trtts_at_current_mark:
+                    ts = trtt_rack.ts_ns
+
+                    # To address bpf_get_prandom_u32() conflicts
+                    # If the difference between brtt and trtt timestamps >= 1 ms
+                    if abs(ts - self.marked_brtts[mark].ts_ns) >= 1_000_000:
+                        continue
+
+                    offset = trtt_rack.rtt - self.marked_brtts[mark].rtt
+                    send_offset = self.marked_brtts[mark].sent - trtt_rack.sent
+                    recv_offset = trtt_rack.acked - self.marked_brtts[mark].acked
+
+                    # Some data is truncated at end
+                    if abs(send_offset) > 1000 or abs(recv_offset) > 1000:
+                        continue
+
+                    self.synced_offsets.append((ts - self.init_ts, offset, send_offset, recv_offset))
+                    
+                    line = f"{ts + self.init_ts:.0f} {ts:.0f} {mark} " + \
+                           f"{self.marked_brtts[mark].sent:.3f} {trtt_rack.sent:.3f} {send_offset:8.3f} " + \
+                           f"{trtt_rack.acked:.3f} {self.marked_brtts[mark].acked:.3f} {recv_offset:8.3f} " + \
+                           f"{offset:8.3f}"
+                    file.write(line + '\n')
+                
+        self.synced_offsets = np.array(self.synced_offsets)
+        print(f"offset avg: {np.mean(self.synced_offsets[:, 1]):.3f} std: {np.std(self.synced_offsets[:, 1]):.3f}")
+        print(f"send_offset avg: {np.mean(self.synced_offsets[:, 2]):.3f} std: {np.std(self.synced_offsets[:, 2]):.3f}")
+        print(f"receive_offset avg: {np.mean(self.synced_offsets[:, 3]):.3f} std: {np.std(self.synced_offsets[:, 3]):.3f}")
 
     def generate_offsets(self):
         offset_points = []
@@ -319,7 +419,7 @@ class Flow:
         trtt_points.append((ts_ns, trtt_us))
         return
     
-    def parse_tcp_rack_advance(self, tokens, rrtt_points):
+    def parse_tcp_rack_advance(self, tokens, rrtt_points, current_mark):
         sport = int(tokens[2])
         if self.sport != sport:
             return None
@@ -327,11 +427,25 @@ class Flow:
         ts_ns = int(tokens[0])
         rtt_us = int(tokens[5])
         tcp_min_rtt = int(tokens[6])
+        rack_mstamp = int(tokens[7])
+        xmit_time = int(tokens[8])
+        tcp_mstamp = int(tokens[9])
 
         if rtt_us < tcp_min_rtt:
             return None
-        if rtt_us < tcp_min_rtt * 3:
-            print(f"{ts_ns} tcp_rack_advance() {sport} {rtt_us} {tcp_min_rtt}")
+        # if rtt_us < tcp_min_rtt * 3:
+        #     print(f"{ts_ns} tcp_rack_advance() {sport} {rtt_us} {tcp_min_rtt}")
+        
+        measured_rtt = MeasuredRTT(ts_ns, xmit_time, tcp_mstamp)
+
+        # Mark-based TRTT
+        if current_mark in self.marked_trtts:
+            trtts_at_current_mark = self.marked_trtts[current_mark]
+            trtts_at_current_mark.append(measured_rtt)
+        else:
+            trtts_at_current_mark = [measured_rtt]
+            self.marked_trtts[current_mark] = trtts_at_current_mark
+
         rrtt_points.append((ts_ns, rtt_us, tcp_min_rtt))
         return
 
@@ -384,7 +498,6 @@ class Flow:
 
     def parse_tcp_retransmit_skb(self, tokens, retrans_points):
         ts_ns = int(tokens[0])
-
         if tokens[1] == "tcp_retransmit_skb()":
             sk = tokens[2]
             if self.sk != sk:
@@ -421,6 +534,9 @@ class Flow:
             return
         
         sk = tokens[2]
+        if self.sk == None:
+            self.sk = sk
+
         if self.sk != sk:
             return
         
@@ -526,7 +642,6 @@ class Flow:
         #           f"{loss.reo_wnd} {loss.waiting} {loss.seg_left} {loss.seg_right} {loss}")
 
         post_sr = {}
-
         for (sr_ts_ns, segment) in self.sretrans:
             (found_loss_ts_ns, found_loss) = (None, None)
             for (loss_ts_ns, loss) in self.losses:
@@ -566,18 +681,22 @@ class Flow:
         #           f"{delivered.left} {delivered.right}",
         #           f"{delivered.bytelen} {delivered.seglen}")
         
-        print(len(post_sr))
         for key in post_sr.keys():
             segment = Segment(key[0], key[1])
             (delivered_ts_ns, found_loss) = post_sr[key]
             diff = delivered_ts_ns - found_loss.ts_ns
-            (left_offset, right_offset) = self.relevant_offsets(found_loss.ts_ns)
-            print(f"SR: {found_loss.ts_ns + self.init_ts:.0f} {found_loss.seg_left} {found_loss.seg_right}",
-                    f"{segment.left} {segment.right} {segment.seglen:2}",
-                    f"{found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff / 1_000:.3f}",
-                    f"{found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000:.3f}",
-                    f"{found_loss.ts_ns + self.init_ts:.0f} {left_offset[0] + self.init_ts:.0f} {left_offset[1]:.3f}",
-                    f"{right_offset[0] + self.init_ts:.0f} {right_offset[1]:.3f}")
+            lateness = found_loss.waiting + diff / 1_000 - (found_loss.rack_rtt_us + found_loss.reo_wnd)
+            (offset_before, offset_after) = self.relevant_offsets(found_loss.ts_ns)
+            diff_offset = offset_before[1] - offset_after[1]
+            diff_send_offset = offset_before[2] - offset_after[2]
+            diff_recv_offset = offset_before[3] - offset_after[3]
+            print(f"SR: {found_loss.ts_ns + self.init_ts:.0f}",
+                #   f"{found_loss.seg_left} {found_loss.seg_right} {segment.left} {segment.right}",
+                  f"{segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff / 1_000:9.3f}",
+                  f"{lateness:9.3f}  ",
+                  f"B{(found_loss.ts_ns - offset_before[0]) / 1_000 :8.3f} {offset_before[1]:9.3f} {offset_before[2]:9.3f} {offset_before[3]:9.3f}",
+                  f"A{(offset_after[0] - found_loss.ts_ns) / 1_000 :8.3f} {offset_after[1]:9.3f} {offset_after[2]:9.3f} {offset_after[3]:9.3f}",
+                  f"| {diff_offset:9.3f} {diff_send_offset:9.3f} {diff_recv_offset:9.3f}")
             
             # lateness = found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000
             # (ts, offset) = self.relevant_offset(found_loss.ts_ns)
@@ -585,9 +704,12 @@ class Flow:
             #         f"{lateness:.3} {found_loss.ts_ns} {offset:.3}")
             
     def relevant_offsets(self, ts):
-        befores = [(offset_ts, offset) for (offset_ts, offset) in self.offsets if offset_ts <= ts]
-        if len(self.offsets) >= len(befores) + 1:
-            next = self.offsets[len(befores)]
+        befores = [(offset_ts, offset, send_offset, recv_offset) \
+                   for (offset_ts, offset, send_offset, recv_offset) in self.synced_offsets \
+                   if offset_ts <= ts]
+        
+        if len(self.synced_offsets) >= len(befores) + 1:
+            next = self.synced_offsets[len(befores)]
             return (max(befores, key=lambda x: x[0]), next)
         else:
             return (max(befores, key=lambda x: x[0]), max(befores, key=lambda x: x[0]))
