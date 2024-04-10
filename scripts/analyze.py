@@ -94,6 +94,7 @@ if __name__ == "__main__":
         #     exit(-1)
         if not hflow.parse_marked_trtt_trace(rrtt_file):
             exit(-1)
+        hflow.parse_fq_delay_trace(f"fq_delay.{args.experiment}.out")
         hflow.generate_synced_offsets(f"so_h{i}.{args.experiment}.out")
         # with open(f"so_h{i}.{args.experiment}.out", 'w') as file:
         #     for (ts, offset, sent_offset, acked_offset) in hflow.synced_offsets:
@@ -135,6 +136,7 @@ if __name__ == "__main__":
         #     exit(-1)
         if not cflow.parse_marked_trtt_trace(rrtt_file):
             exit(-1)
+        cflow.parse_fq_delay_trace(f"fq_delay.{args.experiment}.out")
         cflow.generate_synced_offsets(f"so_c{i}.{args.experiment}.out")
         # with open(f"so_c{i}.{args.experiment}.out", 'w') as file:
         #     for (ts, offset, sent_offset, acked_offset) in cflow.synced_offsets:
