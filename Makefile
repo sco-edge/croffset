@@ -1,5 +1,5 @@
-USER_TARGETS   := pping
-BPF_TARGETS    := pping_kern
+USER_TARGETS   := pping offset
+BPF_TARGETS    := pping_kern offset.bpf
 
 LDLIBS     += -pthread
 EXTRA_DEPS += pping.h pping_debug_cleanup.h

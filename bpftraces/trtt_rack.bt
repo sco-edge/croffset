@@ -1,0 +1,41 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+#include <linux/win_minmax.h>
+#include <net/tcp.h>
+
+kprobe:tcp_ack
+{
+	$skb = (struct sk_buff *)arg1;
+	$mark = $skb->mark;
+
+	printf("%lld tcp_ack() 0x%llx 0x%x\n",
+		   nsecs,
+		   arg1, $mark);
+}
+
+kprobe:tcp_rack_advance
+{
+	$tp = (struct tcp_sock *)arg0;
+	//$inet_conn = (struct inet_connection_sock)$tp->inet_conn;
+	//$icsk_inet = (struct inet_sock)$inet_conn.icsk_inet;
+	//$sk = (struct sock)$icsk_inet.sk;
+	//$port = $sk.__sk_common.skc_num;
+
+	$port = $tp->inet_conn.icsk_inet.sk.__sk_common.skc_num;
+
+	$sacked = arg1;
+	$end_seq = arg2;
+	$xmit_time = arg3;
+
+	$rtt_us = $tp->tcp_mstamp - $xmit_time;
+	$minmax = $tp->rtt_min;
+	$tcp_min_rtt = $minmax.s[0].v >> 2;
+
+	printf("%lld tcp_rack_advance() %d 0x%x 0x%x %d   %d %llu %llu %llu\n",
+		  nsecs,
+		  $port, $end_seq, $tp->rack.end_seq, $rtt_us,
+		  $tcp_min_rtt, $tp->rack.mstamp, $xmit_time, $tp->tcp_mstamp)
+}
+

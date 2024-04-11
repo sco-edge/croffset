@@ -1,0 +1,25 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/tcp.h>
+
+kprobe:tcp_wfree
+{
+	$skb = (struct sk_buff *)arg0;
+	$sk = (struct sock *)$skb->sk;
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$skb_mstamp_ns = $skb->skb_mstamp_ns;
+	$th = (struct tcphdr *)$skb->head + $skb->transport_header;
+	$seq = $th->seq;
+	$source = $th->source;
+	$dest = $th->dest;
+	$len = $skb->len;
+	$end_seq = $cb->end_seq;
+	$start_seq = $end_seq - $len;
+
+	printf("%lld tcp_wfree() 0x%llx 0x%llx 0x%x 0x%x   %d %llu %d %d   0x%x\n",
+		   nsecs,
+		   $sk, $skb, $start_seq, $end_seq,
+		   $len, $skb_mstamp_ns, $source, $dest,
+		   $seq);
+}

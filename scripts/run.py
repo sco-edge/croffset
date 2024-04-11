@@ -301,30 +301,28 @@ def start_instruments(interface):
     # trtt
     with open(f'trtt.{experiment}.out', 'w') as trtt_f:
         trtt_p = subprocess.Popen(["./trtt_rack_bbr.bt"],
-                                  stdout=trtt_f, cwd=os.path.join(iwd, '..'))
+                                  stdout=trtt_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(trtt_f)
     instrument_procs.append(trtt_p)
 
     # trtt for rack
     with open(f'trtt_rack.{experiment}.out', 'w') as trtt_rack_f:
         trtt_rack_p = subprocess.Popen(["./trtt_rack.bt"],
-                                  stdout=trtt_rack_f, cwd=os.path.join(iwd, '..'))
+                                  stdout=trtt_rack_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(trtt_rack_f)
     instrument_procs.append(trtt_rack_p)
 
     # fq_delay for calculating actual xmit
     with open(f'fq_delay.{experiment}.out', 'w') as fq_delay_f:
         fq_delay_p = subprocess.Popen(["./fq_delay.bt"],
-                                  stdout=fq_delay_f, cwd=os.path.join(iwd, '..'))
+                                  stdout=fq_delay_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(fq_delay_f)
     instrument_procs.append(fq_delay_p)
     
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
         sock_p = subprocess.Popen(["./sock.bt"],
-                                  stdout=sock_f, cwd=os.path.join(iwd, '..'))
-        # sock_p = subprocess.Popen(["./ack.bt"],
-        #                           stdout=sock_f, cwd=os.path.join(iwd, '..'))
+                                  stdout=sock_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
 

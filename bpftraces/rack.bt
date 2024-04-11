@@ -1,0 +1,53 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+
+kprobe:bbr_update_model
+{
+	$sock = (struct sock *)arg0;
+	$tp = (struct tcp_sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sock;
+	$port = $sock->__sk_common.skc_num;
+	$rs = (struct rate_sample *)arg1;
+
+	printf("%lld bbr_update_model() 0x%llx %ld %ld %d %d %d\n",
+		   elapsed, arg0, $rs->delivered, $rs->interval_us,
+		   $rs->is_app_limited, $port, $tp->rack.rtt_us);
+}
+
+kprobe:tcp_rack_detect_loss
+{
+	printf("%lld tcp_rack_detect_loss() enter\n",
+		   elapsed);
+}
+
+kretprobe:tcp_rack_detect_loss
+{
+	printf("%lld tcp_rack_detect_loss() exit\n",
+		   elapsed);
+}
+
+kprobe:tcp_rack_skb_timeout
+{
+	$tp = (struct tcp_sock *) arg0;
+	$skb = (struct sk_buff *) arg1;
+	printf("%lld tcp_rack_skb_timeout() %d %d %d %d\n",
+		   elapsed, $tp->rack.rtt_us, arg2, $tp->tcp_mstamp,
+		   $skb->skb_mstamp_ns);
+}
+
+kprobe:tcp_mark_skb_lost
+{
+	$sock = (struct sock *)arg0;
+	$tp = (struct tcp_sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sock;
+	$port = $sock->__sk_common.skc_num;
+	$sk_buff = (struct sk_buff *)arg1;
+	$cbuff = (struct tcp_skb_cb *)$sk_buff->cb;
+	$gso_segs = $cbuff->tcp_gso_segs;
+	printf("%lld tcp_mark_skb_lost() 0x%llx %d %d %d %d %d %d %d\n",
+		   elapsed, arg0, $port, $gso_segs,
+		   $tp->reord_seen, $tp->retrans_out, $tp->total_retrans, $tp->rack.rtt_us,
+		   $tp->rack.dsack_seen);
+}

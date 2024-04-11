@@ -1,0 +1,125 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+#include <linux/win_minmax.h>
+#include <net/tcp.h>
+
+kprobe::tcp_rate_gen
+{
+	$rs = (struct rate_sampe *)arg4;
+	if ($rs->app_limited) {
+		printf("%lld tcp_rate_gen() app_limited\n",
+			   nsecs)
+	}
+}
+
+kprobe::tcp_xmit_recovery
+{
+	$sk = (struct sock *)arg0;
+	$tp = (struct tcp_sock *)$sk;
+
+	printf("%lld tcp_xmit_recovery() 0x%llx %ld %ld %d\n",
+		   nsecs,
+		   arg0, $tp->rate_delivered, $tp->interval_us, $tp->is_app_limited);
+}
+
+kprobe:tcp_rack_detect_loss
+{
+	$sk = (struct sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sk;
+	$tp = (struct tcp_sock *)$sk;
+	
+	$minmax = $tp->rtt_min;
+	$f_tcp_min_rtt = $minmax.s[0].v >> 2;
+	$no_reo_wnd = $tp->sacked_out - $tp->reordering;
+
+	printf("%lld tcp_rack_detect_loss() enter 0x%lld %d %d %d\n",
+		   nsecs,
+		   $sk, $inet_csk->icsk_ca_state, $no_reo_wnd, $f_tcp_min_rtt * $tp->rack.reo_wnd_steps);
+}
+
+kretprobe:tcp_rack_detect_loss
+{
+	printf("%lld tcp_rack_detect_loss() exit\n",
+		   nsecs);
+}
+
+kprobe:tcp_mark_skb_lost
+{
+	$sk = (struct sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sk;
+	$tp = (struct tcp_sock *)$sk;
+
+	$port = $sk->__sk_common.skc_num;
+	$skb = (struct sk_buff *)arg1;
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$gso_segs = $cb->tcp_gso_segs;
+
+	$minmax = $tp->rtt_min;
+	$f_tcp_min_rtt = $minmax.s[0].v >> 2;
+	$f_srtt_us = $tp->srtt_us >> 3;
+
+	$tolerance = $tp->rack.rtt_us + $f_tcp_min_rtt * $tp->rack.reo_wnd_steps;
+	$diff = $tp->tcp_mstamp - ($skb->skb_mstamp_ns / 1000);
+	
+	printf("%lld tcp_mark_skb_lost() 0x%llx 0x%llx %d %d   %d %d %d %d   %d %d\n",
+		   nsecs,
+		   $sk, $skb, $port, $gso_segs,
+		   $tp->reord_seen, $tolerance, $diff, $tp->rack.dsack_seen,
+		   $tp->rack.rtt_us, $f_srtt_us);
+}
+
+kprobe:tcp_check_dsack
+{
+	$sk = (struct sock *)arg0;
+	$sp = (struct tcp_sack_block_wire *)arg2;
+	$start_seq = $sp[0].start_seq;
+	$end_seq = $sp[0].end_seq;
+
+	// For unknown reasons, arg0 cannot be replaced with $sk
+	printf("%lld tcp_check_dsack() 0x%llx 0x%x 0x%x\n",
+		   nsecs,
+		   arg0, $start_seq, $end_seq);
+}
+
+kretprobe:tcp_check_dsack
+/retval/
+{
+	printf("%lld tcp_check_dsack() returns true\n",
+		   nsecs);
+}
+
+kprobe:tcp_retransmit_skb
+{
+	$sk = (struct sock *)arg0;
+	$skb = (struct sk_buff *)arg1;
+	$segs = arg2;
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$tcp_gso_segs = $cb->tcp_gso_segs;
+
+	$seq = $cb->seq;
+	$end_seq = $cb->end_seq;
+
+	printf("%lld tcp_retransmit_skb() 0x%llx 0x%llx %d %d   %x %x\n",
+		   nsecs,
+		   $sk, $skb, $segs, $tcp_gso_segs,
+		   $seq, $end_seq);
+}
+
+kretprobe:__tcp_retransmit_skb
+/retval/
+{
+	printf("%lld __tcp_retransmit_skb() returns true\n",
+		   nsecs);
+}
+
+kprobe:tcp_fastretrans_alert
+{
+	$sk = (struct sock *)arg0;
+	$prior_snd_una = arg1;
+	$num_dupack = arg2;
+	printf("%lld tcp_fastretrans_alert() 0x%llx %d %d\n",
+		   nsecs,
+		   $sk, $prior_snd_una, $num_dupack);
+}

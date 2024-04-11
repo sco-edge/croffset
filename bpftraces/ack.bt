@@ -1,0 +1,18 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+#include <linux/win_minmax.h>
+#include <net/tcp.h>
+
+
+kprobe:tcp_ack
+{
+	$skb = (struct sk_buff *)arg1;
+	$mark = $skb->mark;
+
+	// For unknown reasons, arg0 cannot be replaced with $sk
+	printf("%lld tcp_ack() 0x%llx 0x%x\n",
+		   nsecs,
+		   arg1, $mark);
+}

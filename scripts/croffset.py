@@ -809,7 +809,7 @@ class Flow:
             diff_send_offset = offset_before.offset_send - offset_after.offset_send
             diff_recv_offset = offset_before.offset_recv - offset_after.offset_recv
             
-            print(f"SR: {found_loss.ts + self.init_ts:.0f}",
+            print(f"SR: {found_loss.ts + self.init_ts:15.0f}",
                   f"{segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff:9.3f} {lateness:9.3f}",
                   f"{abs(found_loss.ts - offset_before.tcp_recv) / 1_000 :8.3f} {offset_before.offset:9.3f} {offset_before.offset_send:9.3f} {offset_before.offset_recv:9.3f}",
                   f"{abs(offset_after.tcp_recv - found_loss.ts) / 1_000 :8.3f} {offset_after.offset:9.3f} {offset_after.offset_send:9.3f} {offset_after.offset_recv:9.3f}",
