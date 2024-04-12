@@ -9,3 +9,4 @@ iperfs/rust-iperf/target/
 scripts/*.png
 **/__pycache__/
 .vscode/
+.memo.md

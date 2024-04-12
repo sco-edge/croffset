@@ -2,52 +2,43 @@
 
 #include <net/sock.h>
 #include <net/inet_connection_sock.h>
+#include <linux/win_minmax.h>
+#include <net/tcp.h>
 
-kprobe:bbr_update_model
+kprobe:tcp_ack
 {
-	$sock = (struct sock *)arg0;
+	$sk = (struct sock *)arg0;
+	$port = $sk->__sk_common.skc_num;
+	$skb = (struct sk_buff *)arg1;
+	$mark = $skb->mark;
+
+	printf("%lld tcp_ack() 0x%llx 0x%llx 0x%x %d\n",
+		   nsecs,
+		   arg0, arg1, $mark, $port);
+}
+
+kprobe:tcp_rack_advance
+{
 	$tp = (struct tcp_sock *)arg0;
-	$inet_csk = (struct inet_connection_sock *)$sock;
-	$port = $sock->__sk_common.skc_num;
-	$rs = (struct rate_sample *)arg1;
+	//$inet_conn = (struct inet_connection_sock)$tp->inet_conn;
+	//$icsk_inet = (struct inet_sock)$inet_conn.icsk_inet;
+	//$sk = (struct sock)$icsk_inet.sk;
+	//$port = $sk.__sk_common.skc_num;
 
-	printf("%lld bbr_update_model() 0x%llx %ld %ld %d %d %d\n",
-		   elapsed, arg0, $rs->delivered, $rs->interval_us,
-		   $rs->is_app_limited, $port, $tp->rack.rtt_us);
+	$port = $tp->inet_conn.icsk_inet.sk.__sk_common.skc_num;
+
+	$sacked = arg1;
+	$end_seq = arg2;
+	$xmit_time = arg3;
+
+	$rtt_us = $tp->tcp_mstamp - $xmit_time;
+	$minmax = $tp->rtt_min;
+	$tcp_min_rtt = $minmax.s[0].v >> 2;
+
+	printf("%lld tcp_rack_advance() %d 0x%x 0x%x %d   %d %llu %llu %llu   %u\n",
+		  nsecs,
+		  $port, $end_seq, $tp->rack.end_seq, $rtt_us,
+		  $tcp_min_rtt, $tp->rack.mstamp, $xmit_time, $tp->tcp_mstamp,
+		  $sacked)
 }
 
-kprobe:tcp_rack_detect_loss
-{
-	printf("%lld tcp_rack_detect_loss() enter\n",
-		   elapsed);
-}
-
-kretprobe:tcp_rack_detect_loss
-{
-	printf("%lld tcp_rack_detect_loss() exit\n",
-		   elapsed);
-}
-
-kprobe:tcp_rack_skb_timeout
-{
-	$tp = (struct tcp_sock *) arg0;
-	$skb = (struct sk_buff *) arg1;
-	printf("%lld tcp_rack_skb_timeout() %d %d %d %d\n",
-		   elapsed, $tp->rack.rtt_us, arg2, $tp->tcp_mstamp,
-		   $skb->skb_mstamp_ns);
-}
-
-kprobe:tcp_mark_skb_lost
-{
-	$sock = (struct sock *)arg0;
-	$tp = (struct tcp_sock *)arg0;
-	$inet_csk = (struct inet_connection_sock *)$sock;
-	$port = $sock->__sk_common.skc_num;
-	$sk_buff = (struct sk_buff *)arg1;
-	$cbuff = (struct tcp_skb_cb *)$sk_buff->cb;
-	$gso_segs = $cbuff->tcp_gso_segs;
-	printf("%lld tcp_mark_skb_lost() 0x%llx %d %d %d %d %d %d %d\n",
-		   elapsed, arg0, $port, $gso_segs,
-		   $tp->reord_seen, $tp->retrans_out, $tp->total_retrans, $tp->rack.rtt_us,
-		   $tp->rack.dsack_seen);
-}
