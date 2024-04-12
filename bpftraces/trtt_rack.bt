@@ -7,12 +7,14 @@
 
 kprobe:tcp_ack
 {
+	$sk = (struct sock *)arg0;
+	$port = $sk->__sk_common.skc_num;
 	$skb = (struct sk_buff *)arg1;
 	$mark = $skb->mark;
 
-	printf("%lld tcp_ack() 0x%llx 0x%x\n",
+	printf("%lld tcp_ack() 0x%llx 0x%llx 0x%x %d\n",
 		   nsecs,
-		   arg1, $mark);
+		   arg0, arg1, $mark, $port);
 }
 
 kprobe:tcp_rack_advance
