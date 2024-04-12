@@ -288,13 +288,13 @@ def start_instruments(interface):
     instrument_procs.append(cpuload_p)
 
     # brtt
-    with open(f'brtt.{experiment}.out', 'w') as brtt_f:
+    with open(f'xdpts.{experiment}.out', 'w') as brtt_f:
         if int(args.container) > 0:
-            brtt_p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
-                                      stdout=brtt_f, cwd=os.path.join(iwd, '..'))
+            brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
+                                      stdout=brtt_f, cwd=os.path.join(iwd, '../xdpts'))
         else:
-            brtt_p = subprocess.Popen(["./pping", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
-                                      stdout=brtt_f, cwd=os.path.join(iwd, '..'))
+            brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
+                                      stdout=brtt_f, cwd=os.path.join(iwd, '../xdpts'))
     instrument_files.append(brtt_f)
     instrument_procs.append(brtt_p)
 

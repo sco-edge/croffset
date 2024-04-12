@@ -76,9 +76,14 @@ if __name__ == "__main__":
             hflow = croffset.Flow("TCP", saddr, first_sport + i, daddr, first_dport_iperf + i, "iperf")
         hflows.append(hflow)
 
-    brtt_file = f"brtt.{args.experiment}.out"
+    # brtt_file = f"brtt.{args.experiment}.out"
+    # for hflow in hflows:
+    #     if not hflow.parse_brtt_trace(brtt_file):
+    #         exit(-1)
+
+    xdpts_file = f"xdpts.{args.experiment}.out"
     for hflow in hflows:
-        if not hflow.parse_brtt_trace(brtt_file):
+        if not hflow.parse_xdpts_trace(xdpts_file):
             exit(-1)
 
     trtt_file = f"trtt.{args.experiment}.out"
@@ -107,7 +112,6 @@ if __name__ == "__main__":
     sock_file = f"sock.{args.experiment}.out"
     for i, hflow in enumerate(hflows):
         hflow.parse_sock_trace(sock_file)
-        print(f"h{i} retransmissions:", hflow.retrans_segments())
 
     # Container flows
     cflows = []
@@ -118,9 +122,14 @@ if __name__ == "__main__":
             cflow = croffset.Flow("UDP", saddr, first_sport + i, daddr, first_dport_iperf + i, "iperf")
         cflows.append(cflow)
     
-    brtt_file = f"brtt.{args.experiment}.out"
+    # brtt_file = f"brtt.{args.experiment}.out"
+    # for cflow in cflows:
+    #     if not cflow.parse_brtt_trace(brtt_file):
+    #         exit(-1)
+
+    xdpts_file = f"xdpts.{args.experiment}.out"
     for cflow in cflows:
-        if not cflow.parse_brtt_trace(brtt_file):
+        if not cflow.parse_xdpts_trace(xdpts_file):
             exit(-1)
 
     trtt_file = f"trtt.{args.experiment}.out"
@@ -150,12 +159,13 @@ if __name__ == "__main__":
     sock_file = f"sock.{args.experiment}.out"
     for i, cflow in enumerate(cflows):
         cflow.parse_sock_trace(sock_file)
-        print(f"c{i} retransmissions:", cflow.retrans_segments())
 
     # Analyze spurious retransmissions
-    for hflow in hflows:
+    for i, hflow in enumerate(hflows):
+        print(f"h{i} retransmissions:", hflow.retrans_segments())
         hflow.analyze_spurious_retrans()
-    for cflow in cflows:
+    for i, cflow in enumerate(cflows):
+        print(f"c{i} retransmissions:", cflow.retrans_segments())
         cflow.analyze_spurious_retrans()
 
     # Plot
@@ -163,14 +173,14 @@ if __name__ == "__main__":
         for i, hflow in enumerate(hflows):
             # plot.plot_rtts(hflow, f"rtts_h{i}", True)
             plot.plot_synced_offsets(hflow, f"soffsets_h{i}", True)
-            plot.plot_diff_offsets(hflow, f"doffsets_h{i}", True)
+            # plot.plot_diff_offsets(hflow, f"doffsets_h{i}", True)
             # plot.plot_offsets(hflow, f"offsets_h{i}", True)
             # plot.plot_offsets2(hflow, f"offsets2_h{i}", True)
             # plot.plot_offsets3(hflow, f"offsets3_h{i}", True)
         for i, cflow in enumerate(cflows):
             # plot.plot_rtts(cflow, f"rtts_c{i}", True)
             plot.plot_synced_offsets(cflow, f"soffsets_c{i}", True)
-            plot.plot_diff_offsets(cflow, f"doffsets_c{i}", True)
+            # plot.plot_diff_offsets(cflow, f"doffsets_c{i}", True)
             # plot.plot_offsets(cflow, f"offsets_c{i}", True)
             # plot.plot_offsets2(cflow, f"offsets2_c{i}", True)
             # plot.plot_offsets3(cflow, f"offsets3_c{i}", True)

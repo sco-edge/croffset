@@ -15,9 +15,9 @@ def plot_rtts(flow, output_name, plot_loss):
 
     if plot_loss == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.legend(loc='upper right', fontsize=18)
     pp.savefig(f"{output_name}.png", dpi=300, bbox_inches='tight', pad_inches=0.05)
@@ -30,9 +30,9 @@ def plot_rtts(flow, output_name, plot_loss):
 
     if plot_loss == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.legend(loc='upper right', fontsize=18)
     pp.savefig(f"{output_name}_brtt.png", dpi=300, bbox_inches='tight', pad_inches=0.05)
@@ -45,9 +45,9 @@ def plot_rtts(flow, output_name, plot_loss):
 
     if plot_loss == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.legend(loc='upper right', fontsize=18)
     pp.savefig(f"{output_name}_trtt.png", dpi=300, bbox_inches='tight', pad_inches=0.05)
@@ -60,9 +60,9 @@ def plot_rtts(flow, output_name, plot_loss):
 
     if plot_loss == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.legend(loc='upper right', fontsize=18)
     pp.savefig(f"{output_name}_rrtts.png", dpi=300, bbox_inches='tight', pad_inches=0.05)
@@ -72,7 +72,7 @@ def plot_synced_offsets(flow, output_name, plot_retrans):
     #     for (ts_ns, retrans) in flow.retrans:
     #         print(ts_ns + flow.init_ts, ts_ns, retrans.segsent)
 
-    tcp_recv_ts = [t.tcp_recv for t in flow.synced_offsets]
+    tcp_recv_ts = [t.tcp_recv - flow.init_ts for t in flow.synced_offsets]
     offsets = [t.offset for t in flow.synced_offsets]
     offsets_send = [t.offset_send for t in flow.synced_offsets]
     offsets_recv = [t.offset_recv for t in flow.synced_offsets]
@@ -86,9 +86,9 @@ def plot_synced_offsets(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
             
     pp.axhline(y=0, color='r', linewidth=1, linestyle='-')
 
@@ -102,9 +102,9 @@ def plot_synced_offsets(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.axhline(y=0, color='r', linewidth=1, linestyle='-')
 
@@ -118,9 +118,9 @@ def plot_synced_offsets(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.axhline(y=0, color='r', linewidth=1, linestyle='-')
 
@@ -135,9 +135,9 @@ def plot_offsets(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.savefig(f"{output_name}.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
 
@@ -150,9 +150,9 @@ def plot_offsets2(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.savefig(f"{output_name}.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
 
@@ -165,9 +165,9 @@ def plot_offsets3(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.savefig(f"{output_name}.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
 
@@ -183,7 +183,7 @@ def plot_diff_offsets(flow, output_name, plot_retrans):
         #     diff_send_offsets.append((flow.synced_offsets[i + 1][2] - flow.synced_offsets[i][2]) / flow.synced_offsets[i][2])
         #     diff_recv_offsets.append((flow.synced_offsets[i + 1][3] - flow.synced_offsets[i][3]) / flow.synced_offsets[i][3])
         
-        x.append(flow.synced_offsets[i].tcp_recv)
+        x.append(flow.synced_offsets[i].tcp_recv - flow.init_ts)
         diff_offsets.append(flow.synced_offsets[i + 1].offset - flow.synced_offsets[i].offset) 
         diff_send_offsets.append(flow.synced_offsets[i + 1].offset_send - flow.synced_offsets[i].offset_send)
         diff_recv_offsets.append(flow.synced_offsets[i + 1].offset_recv - flow.synced_offsets[i].offset_recv)
@@ -195,10 +195,10 @@ def plot_diff_offsets(flow, output_name, plot_retrans):
     pp.scatter(x, diff_offsets, s=1, label='offset')
 
     if plot_retrans == True:
-        for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+        for (ts_ns , loss) in flow.losses:
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.savefig(f"{output_name}.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
 
@@ -210,9 +210,9 @@ def plot_diff_offsets(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.savefig(f"{output_name}_send.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
 
@@ -224,8 +224,8 @@ def plot_diff_offsets(flow, output_name, plot_retrans):
 
     if plot_retrans == True:
         for (ts_ns, loss) in flow.losses:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.02, color='red')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.02, color='red')
         for (ts_ns, sretrans) in flow.sretrans:
-            pp.axvline(x=ts_ns, ymin=0, ymax=0.01, color='blue')
+            pp.axvline(x=ts_ns - flow.init_ts, ymin=0, ymax=0.01, color='blue')
 
     pp.savefig(f"{output_name}_recv.png", dpi=300, bbox_inches='tight', pad_inches=0.01)
