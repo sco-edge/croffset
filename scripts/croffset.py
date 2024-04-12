@@ -4,34 +4,36 @@ import re
 import numpy as np
 mss = 1398
 
-class RoundTripTimestamps:
+class MeasuredRTT:
     # All timestamps are stored in ns unit
-    tcp_send = None
-    tcp_recv = None
+    mark = None
+    rack_send = None
+    rack_recv = None
     xdp_ingress = None
     fq_enqueue = None
     fq_dequeue = None
 
     # All RTTs are stored in us unit
-    top_rtt = None
-    bottom_rtt = None
+    trtt = None
+    brtt = None
     offset_send = None
     offset_recv = None
     offset = None
     tc_fq = None
-    fq = None    
+    fq = None
 
-    def __init__(self, tcp_send, tcp_recv, xdp_ingress, fq_enqueue, fq_dequeue):
-        self.tcp_send = tcp_send
-        self.tcp_recv = tcp_recv
+    def __init__(self, mark, rack_send, rack_recv, xdp_ingress, fq_enqueue, fq_dequeue):
+        self.mark = mark
+        self.rack_send = rack_send
+        self.rack_recv = rack_recv
         self.xdp_ingress = xdp_ingress
         self.fq_enqueue = fq_enqueue
         self.fq_dequeue = fq_dequeue
 
-        self.top_rtt = (tcp_recv - tcp_send) / 1000
-        self.bottom_rtt = (xdp_ingress - fq_dequeue) / 1000
-        self.offset_send = (fq_dequeue - tcp_send) / 1000
-        self.offset_recv = (tcp_recv - xdp_ingress) / 1000
+        self.trtt = (rack_recv - rack_send) / 1000
+        self.brtt = (xdp_ingress - fq_dequeue) / 1000
+        self.offset_send = (fq_dequeue - rack_send) / 1000
+        self.offset_recv = (rack_recv - xdp_ingress) / 1000
         self.offset = self.offset_send + self.offset_recv
         self.fq = (fq_dequeue - fq_enqueue) / 1000
         self.tc_fq = self.offset_send - self.fq
@@ -41,17 +43,17 @@ class RoundTripTimestamps:
         if abs(self.offset_send) > 10_000 or abs(self.offset_recv) > 10_000:
             raise ValueError("Some timestamps might be wrong")
 
-class MeasuredRTT:
-    ts = None
-    sent_ts = None
-    acked_ts = None
-    rtt = None
+# class MeasuredRTT:
+#     ts = None
+#     sent_ts = None
+#     acked_ts = None
+#     rtt = None
 
-    def __init__(self, ts, sent_ts, acked_ts):
-        self.ts = ts
-        self.sent_ts = sent_ts
-        self.acked_ts = acked_ts
-        self.rtt = (acked_ts - sent_ts) / 1000
+#     def __init__(self, ts, sent_ts, acked_ts):
+#         self.ts = ts
+#         self.sent_ts = sent_ts
+#         self.acked_ts = acked_ts
+#         self.rtt = (acked_ts - sent_ts) / 1000
 
 class Segment:
     left = None
@@ -106,31 +108,27 @@ class NeperStat:
     throughput = None
 
 class Flow:
+    sk = None        # sk address
     saddr = None
     sport = None
     daddr = None
     dport = None
     transport = None
+
+    astat = None     # Application Statistics
+    
     init_ts = None   # Initial timestamp
-    marked_brtts = None
-    marked_trtts = None
-    synced_offsets = None
-    brtts = None     # Bottom RTTs measured at XDP-TC
-    trtts = None     # Top RTTs measured at TCP
-    rrtts = None     # RTTs measured at RACK
-    offsets = None   # RTT offsets (trtt - brtt)
-    offsets2 = None  # RTT offsets (rrtt - brtt)
-    offsets3 = None  # RTT offsets (rrtt - trtt)
+    xdps_map = None     # Raw timestamps for xdp
+    racks_map = None    # Raw timestamps for rack
+    fqs_map = None      # Raw timestamps for fq
+    rtts = None       # Measured RTTs
+
     losses = None    # Packet loss events
     delivered = None # Delivered events
     retrans = None   # Retransmission events
     sretrans = None  # Spurious retransmission events
     dsacks = None    # DSACK events
-    astat = None     # Application Statistics
-    sk = None        # sk address
-    queuing = None   # Send-side queuing delay in FQ
-    xdp_ingress = None     # xdpts
-
+    
     def __init__(self, transport, saddr, sport, daddr, dport, app):
         self.transport = transport
         self.saddr = saddr
@@ -138,12 +136,10 @@ class Flow:
         self.daddr = daddr
         self.dport = dport
 
-        self.marked_brtts = {}
-        self.marked_trtts = {}
-        self.synced_offsets = []
-        self.xdp_ingress = {}
-
-        self.queuing = {}
+        self.xdps_map = {}
+        self.racks_map = {}
+        self.fqs_map = {}
+        self.rtts = []
 
         if app == "iperf":
             self.astat = IperfStat
@@ -151,35 +147,8 @@ class Flow:
             self.astat = NeperStat
         else:
             print(f"flow init error: {app}")
-    
-    def parse_brtt_trace(self, file):
-        brtt_points = []
-        expr = re.compile(r"^(\d+?) (.+?) ms (.+?) ms " +
-                        f"{self.transport} {self.daddr}:{self.dport}\+{self.saddr}:{self.sport} (.+?) (.+?) (.+?)$")
-        with open(file, 'r') as lines:
-            lines.seek(0)
-            for l in lines:
-                match = expr.search(l)
-                if match == None:
-                    continue
-                
-                ts = int(match.group(1))
-                brtt_us = float(match.group(2)) * 1000
-                mark = padded_hex(int(match.group(4), 16), 8)
-                start_ts = int(match.group(5))
-                end_ts = int(match.group(6))
-                measured_rtt = MeasuredRTT(ts, start_ts, end_ts)
-                self.marked_brtts[mark] = measured_rtt
-                brtt_points.append((ts, brtt_us))
 
-        if len(brtt_points) == 0:
-            print("parse_brtt_trace() parsing failed.")
-            return 0
-        
-        self.brtts = np.array(brtt_points)
-        return len(self.brtts)
-
-    def parse_xdpts_trace(self, file):
+    def parse_xdp_trace(self, file):
         expr = re.compile(r"^(\d+?) (.+?)$")
         with open(file, 'r') as lines:
             lines.seek(0)
@@ -190,25 +159,16 @@ class Flow:
                 
                 ts = int(match.group(1))
                 mark = padded_hex(int(match.group(2), 16), 8)
-                if not mark in self.xdp_ingress:
-                    self.xdp_ingress[mark] = ts
-                    continue
-                
-                existing_value = self.xdp_ingress.pop(mark)
-                if isinstance(existing_value, list):
-                    existing_value.append(ts)
-                    self.xdp_ingress[mark] = existing_value
+
+                if not mark in self.xdps_map:
+                    self.xdps_map[mark] = [ts]
                 else:
-                    self.xdp_ingress[mark] = list((existing_value, ts))                                
+                    self.xdps_map[mark].append(ts)
 
-        if len(self.xdp_ingress) == 0:
-            print("parse_xdpts_trace() parsing failed.")
-            return 0
-        
-        return len(self.xdp_ingress)
+        return len(self.xdps_map)
 
-    def parse_trtt_trace_bbr(self, file):
-        trtt_points = []
+    def parse_rack_trace(self, file):
+        marks = {}
 
         with open(file, 'r') as lines:
             lines.seek(0)
@@ -217,95 +177,89 @@ class Flow:
                 if len(tokens) < 2:
                     continue
 
-                # Top RTT events
-                if tokens[1] == "bbr_update_model()":
-                    self.parse_bbr_update_model(tokens, trtt_points)
-                    continue
-
-        if len(trtt_points) == 0:
-            print("parse_trtt_trace_bbr() parsing failed.")
-            return 0
-        
-        self.trtts = np.array(trtt_points)
-        self.init_ts = int(np.min(self.trtts[:, 0]))
-
-        # # Regularize to init_ts
-        # for key in self.xdp_ingress:
-        #     if isinstance(self.xdp_ingress[key], list):
-        #         self.xdp_ingress[key] = [value - self.init_ts for value in self.xdp_ingress[key]]
-        #     else:
-        #         self.xdp_ingress[key] = self.xdp_ingress[key] - self.init_ts
-        # self.trtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.trtts])
-        return len(self.trtts)
-    
-    # Temporary
-    def parse_trtt_trace_cubic(self, file):
-        self.init_ts = int(np.min(self.brtts[:, 0]))
-
-        # Regularize to init_ts
-        # self.brtts = np.array([(i[0] - self.init_ts, i[1]) for i in self.brtts])
-        self.brtts = np.array([(i[0], i[1]) for i in self.brtts])
-        return self.init_ts
-
-    def parse_rrtt_trace(self, file):
-        rrtt_points = []
-
-        with open(file, 'r') as lines:
-            lines.seek(0)
-            for l in lines:
-                tokens = l.rstrip().split()
-                if len(tokens) < 2:
-                    continue
-
-                # Top RTT events
-                if tokens[1] == "tcp_rack_advance()":
-                    self.parse_tcp_rack_advance(tokens, rrtt_points)
-                    continue
-
-        if len(rrtt_points) == 0:
-            print("parse_rrtt_trace() parsing failed.")
-            return 0
-        
-        self.rrtts = np.array(rrtt_points)
-
-        # Regularize to init_ts
-        # self.rrtts = np.array([(i[0] - self.init_ts, i[1], i[2]) for i in self.rrtts])
-        return len(self.rrtts)
-
-    def parse_marked_trtt_trace(self, file):
-        rrtt_points = []
-        current_marks = {}
-
-        with open(file, 'r') as lines:
-            lines.seek(0)
-            for l in lines:
-                tokens = l.rstrip().split()
-                if len(tokens) < 2:
-                    continue
-
+                # Parse tcp_ack()
                 if tokens[1] == "tcp_ack()":
+                    mark = padded_hex(int(tokens[4], 16), 8)
                     port = int(tokens[5])
                     if self.sport == port and self.sk == None:
                         self.sk = tokens[2]
 
-                    current_marks[port] = padded_hex(int(tokens[4], 16), 8)
+                    marks[port] = mark
                     
-                    # print("current_mark:", current_mark)
-
-                # Top RTT events
+                # Parse tcp_rack_advance()
                 if tokens[1] == "tcp_rack_advance()":
-                    self.parse_tcp_rack_advance(tokens, rrtt_points, current_marks)
+                    sport = int(tokens[2])
+                    if self.sport != sport or not marks.get(sport):
+                        continue
+                    mark = marks[sport]
+
+                    ts = int(tokens[0])
+                    rtt_us = int(tokens[5])
+                    tcp_min_rtt_us = int(tokens[6])
+                    rack_mstamp = int(tokens[7]) * 1000
+                    xmit_time = int(tokens[8]) * 1000
+                    tcp_mstamp = int(tokens[9]) * 1000
+                    sacked = int(tokens[10])
+
+                    # tcp_rack_advance() logic
+                    # if rtt_us < tcp_min_rtt_us and (sacked & int("0x02", 16) + int("0x80", 16) + int("0x10", 16)):
+                    #     continue
+
+                    # init_ts is initialized here
+                    if not self.init_ts:
+                        self.init_ts = xmit_time
+
+                    if not mark in self.racks_map:
+                        self.racks_map[mark] = [(ts, xmit_time, tcp_mstamp)]
+                    else:
+                        self.racks_map[mark].append((ts, xmit_time, tcp_mstamp))
+
+        return len(self.racks_map)
+    
+    def parse_fq_trace(self, file):
+        queued = {}
+        with open(file, 'r') as lines:
+            lines.seek(0)
+            for l in lines:
+                tokens = l.rstrip().split()
+                if len(tokens) < 2:
                     continue
 
-        if len(rrtt_points) == 0:
-            print("parse_rrtt_trace() parsing failed.")
-            return 0
-        
-        self.rrtts = np.array(rrtt_points)
+                # FQ enqueue events
+                if tokens[1] == "fq_enqueue()":
+                    sk = padded_hex(int(tokens[2], 16), 16)
+                    if sk != self.sk:
+                        continue
 
-        # Regularize to init_ts
-        # self.rrtts = np.array([(i[0] - self.init_ts, i[1], i[2]) for i in self.rrtts])
-        return len(self.rrtts)
+                    ts = int(tokens[0])
+                    skb = padded_hex(int(tokens[3], 16), 16)
+                    skb_mstamp_ns = int(tokens[4])
+                    queued[skb] = (ts, skb_mstamp_ns)
+                    continue
+
+                # FQ dequeue events
+                if tokens[1] == "fq_dequeue()":
+                    sk = padded_hex(int(tokens[2], 16), 16)
+                    if sk != self.sk:
+                        continue
+
+                    ts = int(tokens[0])
+                    skb = padded_hex(int(tokens[3], 16), 16)
+                    skb_mstamp_ns = int(tokens[4])
+
+                    if skb in queued:
+                        (enqueue_ts, enqueue_skb_mstamp_ns) = queued.pop(skb)
+                        
+                        # div_u64() in the kernel seems to truncate the decimal point
+                        skb_mstamp_us = int(skb_mstamp_ns / 1_000)
+  
+                        # skb_mstamp_us works as an identifier for sk_buff
+                        if not skb_mstamp_us in self.fqs_map:
+                            self.fqs_map[skb_mstamp_us] = [(enqueue_ts, ts)]
+                        else:
+                            self.fqs_map[skb_mstamp_us].append((enqueue_ts, ts))
+        
+        return len(self.fqs_map)
 
     def parse_sock_trace(self, file):
         loss_points = []
@@ -344,224 +298,54 @@ class Flow:
                     self.parse_tcp_rate_skb_delivered(tokens, delivered_points)
                     continue
 
-        # self.losses = np.array([(i[0] - self.init_ts, i[1]) for i in loss_points])
-        # self.retrans = np.array([(i[0] - self.init_ts, i[1]) for i in retrans_points])
-        # self.delivered = np.array([(i[0] - self.init_ts, i[1]) for i in delivered_points])
-        # self.sretrans = np.array([(i[0] - self.init_ts, i[1]) for i in sr_points])
-        # self.dsacks = np.array([(i[0] - self.init_ts, i[1]) for i in dsack_points])
         self.losses = np.array([(i[0], i[1]) for i in loss_points])
         self.retrans = np.array([(i[0], i[1]) for i in retrans_points])
         self.delivered = np.array([(i[0], i[1]) for i in delivered_points])
         self.sretrans = np.array([(i[0], i[1]) for i in sr_points])
         self.dsacks = np.array([(i[0], i[1]) for i in dsack_points])
+    
+        # sock trace may have no entries
+        return True
 
-    def parse_fq_delay_trace(self, file):
-        queued_packets = {}
-        with open(file, 'r') as lines:
-            lines.seek(0)
-            for l in lines:
-                tokens = l.rstrip().split()
+    def construct_rtts(self, output):
+        for mark in self.xdps_map:
+            if mark not in self.racks_map:
+                continue
 
-                if len(tokens) < 2:
+            racks = self.racks_map.get(mark)
+            for (rack_ts, rack_send, rack_recv) in racks:
+                rack_send_us = int(rack_send / 1_000)
+
+                xdp_ts = min((el for el in self.xdps_map[mark] if el <= rack_recv),
+                                key=lambda x: rack_recv - x)
+
+                # To address bpf_get_prandom_u32() conflicts
+                # If the difference between brtt and trtt timestamps >= 1 ms
+                if abs(rack_ts - xdp_ts) >= 10_000_000:
                     continue
 
-                # FQ enqueue events
-                if tokens[1] == "fq_enqueue()":
-                    sk = padded_hex(int(tokens[2], 16), 16)
-                    if sk != self.sk:
-                        continue
-
-                    ts = int(tokens[0])
-                    skb = padded_hex(int(tokens[3], 16), 16)
-                    skb_mstamp_ns = int(tokens[4])
-                    queued_packets[skb] = (ts, skb_mstamp_ns)
+                if not int(rack_send_us) in self.fqs_map:
                     continue
 
-                # FQ dequeue events
-                if tokens[1] == "fq_dequeue()":
-                    sk = padded_hex(int(tokens[2], 16), 16)
-                    if sk != self.sk:
-                        continue
+                (fq_enqueue, fq_dequeue) = min(self.fqs_map[rack_send_us], key=lambda x: x)
+                try:
+                    rtt = MeasuredRTT(mark, rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue)
+                    # print(rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue)
+                    self.rtts.append(rtt)
+                except ValueError:
+                    pass
 
-                    ts = int(tokens[0])
-                    skb = padded_hex(int(tokens[3], 16), 16)
-                    skb_mstamp_ns = int(tokens[4])
-
-                    if skb in queued_packets:
-                        (enqueue_ts, enqueue_skb_mstamp_us) = queued_packets.pop(skb)
-                        
-                        # div_u64() in the kernel seems to truncate the decimal point
-                        skb_mstamp_us = int(skb_mstamp_ns / 1_000)
-
-                        # skb_mstamp_us works as an identifier for sk_buff
-                        if skb_mstamp_us in self.queuing:
-                            existing_value = self.queuing.pop(skb_mstamp_us)
-                            if isinstance(existing_value, list):
-                                existing_value.append((enqueue_ts, ts))
-                                self.queuing[skb_mstamp_us] = existing_value
-                            else:
-                                self.queuing[skb_mstamp_us] = list((existing_value, (enqueue_ts, ts)))
-                        else:
-                            self.queuing[skb_mstamp_us] = (enqueue_ts, ts)
-                    continue
-
-    def generate_synced_offsets(self, output):
-        with open(output, 'w') as file:
-            # for mark in self.marked_brtts:
-            #     if mark not in self.marked_trtts:
-            #         continue
-            for mark in self.xdp_ingress:
-                if mark not in self.marked_trtts:
-                    continue
-
-                trtts_at_current_mark = self.marked_trtts.get(mark)
-                for trtt_rack in trtts_at_current_mark:
-                    ts = trtt_rack.ts
-                    sent_ts_us = int(trtt_rack.sent_ts / 1000)
-
-                    if isinstance(self.xdp_ingress[mark], list):
-                        xdp_ts = min((el for el in self.xdp_ingress[mark] if el <= trtt_rack.acked_ts),
-                                     key=lambda x: trtt_rack.acked_ts - x)
-                    else:
-                        xdp_ts = self.xdp_ingress[mark]
-
-                    # To address bpf_get_prandom_u32() conflicts
-                    # If the difference between brtt and trtt timestamps >= 1 ms
-                    if abs(ts - xdp_ts) >= 10_000_000:
-                        continue
-
-                    if not int(sent_ts_us) in self.queuing:
-                        continue
-
-                    if isinstance(self.queuing[sent_ts_us], list):
-                        (fq_enqueue, fq_dequeue) = self.queuing[sent_ts_us].pop(0)
-                        if len(self.queuing[sent_ts_us]) == 0:
-                            self.queuing.pop(sent_ts_us)
-                    else:
-                        (fq_enqueue, fq_dequeue) = self.queuing.pop(sent_ts_us)
-                    try:
-                        t = RoundTripTimestamps(trtt_rack.sent_ts, trtt_rack.acked_ts, \
-                            xdp_ts, fq_enqueue, fq_dequeue)
-                        self.synced_offsets.append(t)
-                        line = f"{t.tcp_recv:>15.0f} {t.tcp_recv - self.init_ts:>11.0f} {mark}   " + \
-                               f"{t.tcp_send:>11.0f} {t.fq_dequeue:>11.0f} {t.offset_send:>8.3f}   " + \
-                               f"{t.xdp_ingress:>11.0f} {t.tcp_recv:>11.0f} {t.offset_recv:>8.3f}   " + \
-                               f"{t.offset:>8.3f} {t.fq:>8.3f} {t.tc_fq:>8.3f}"
-                        file.write(line + '\n')
-                    except ValueError:
-                        pass
-                    
-                    # offset = trtt_rack.rtt - self.marked_brtts[mark].rtt
-                    # send_offset = self.marked_brtts[mark].sent - trtt_rack.sent
-                    # recv_offset = trtt_rack.acked - self.marked_brtts[mark].acked
-
-                    # # Some data is truncated at end
-                    # if abs(send_offset) > 1000 or abs(recv_offset) > 1000:
-                    #     continue
-
-                    # self.synced_offsets.append((ts - self.init_ts, offset, send_offset, recv_offset))
-                
-        self.synced_offsets = np.array(self.synced_offsets)
-        # print(f"number of synced offset: {len(self.synced_offsets)}")
-        print(f"tot offset avg: {np.mean([t.offset for t in self.synced_offsets]):.3f} std: {np.std([t.offset for t in self.synced_offsets]):.3f}")
-        print(f"snd offset avg: {np.mean([t.offset_send for t in self.synced_offsets]):.3f} std: {np.std([t.offset_send for t in self.synced_offsets]):.3f}")
-        print(f"rcv offset avg: {np.mean([t.offset_recv for t in self.synced_offsets]):.3f} std: {np.std([t.offset_recv for t in self.synced_offsets]):.3f}")
-        print(f"fq queuing avg: {np.mean([t.fq for t in self.synced_offsets]):.3f} std: {np.std([t.fq for t in self.synced_offsets]):.3f}")
-
-        # print(f"tot offset avg: {np.mean(self.synced_offsets[:, 1]):.3f} std: {np.std(self.synced_offsets[:, 1]):.3f}")
-        # print(f"snd offset avg: {np.mean(self.synced_offsets[:, 2]):.3f} std: {np.std(self.synced_offsets[:, 2]):.3f}")
-        # print(f"rcv offset avg: {np.mean(self.synced_offsets[:, 3]):.3f} std: {np.std(self.synced_offsets[:, 3]):.3f}")
-
-    def generate_offsets(self):
-        offset_points = []
-        current = 0
-        for (trtt_ts, trtt_us) in self.trtts:
-            if trtt_ts < self.brtts[current][0]:
-                # print(trtt_ts, "Case 2", None)
-                # offset_points.append((trtt_ts, None))
-                continue
-
-            while True:
-                if current + 1 >= len(self.brtts):
-                    break
-                if trtt_ts >= self.brtts[current][0] and \
-                    trtt_ts < self.brtts[current + 1][0]:
-                    break
-                current += 1
-
-            # If brtt reaches the last element
-            if current + 1 >= len(self.brtts):
-                # print(trtt_ts, "Case 1", None)
-                # offset_points.append((trtt_ts, None))
-
-                # if trtt_ts >= self.brtts[current][0]:
-                #     print(trtt_ts, "Case 0", trtt_us, self.brtts[current][1], trtt_us - self.brtts[current][1])
-                #     offset_points.append((trtt_ts, trtt_us - self.brtts[current][1]))
-                # else:
-                #     print(trtt_ts, "Case 1", None)
-                #     offset_points.append((trtt_ts, None))
-                continue
-            else:
-                # print(trtt_ts, "Case 3", trtt_us, self.brtts[current][1], trtt_us - self.brtts[current][1])
-                
-                # ** CAUTION **
-                # This commented code tries to sample only the diffs between trtt and brtt timestamp are bounded
-                # But it does not work.
-                #
-                # if trtt_ts - self.brtts[current][0] < 20000:
-                #     print(f"{trtt_ts} {self.brtts[current][0]} {trtt_ts - self.brtts[current][0]}",
-                #           f"{trtt_us} {self.brtts[current][1]} {trtt_us - self.brtts[current][1]}")
-                #     offset_points.append((trtt_ts, trtt_us - self.brtts[current][1]))
-
-                offset_points.append((trtt_ts, trtt_us - self.brtts[current][1]))
-
-        self.offsets = np.array(offset_points)
-
-    def generate_offsets2(self):
-        offset_points = []
-        current = 0
-        for (rrtt_ts, rrtt_us, rrtt_min) in self.rrtts:
-            if rrtt_ts < self.brtts[current][0]:
-                continue
-
-            while True:
-                if current + 1 >= len(self.brtts):
-                    break
-                if rrtt_ts >= self.brtts[current][0] and \
-                    rrtt_ts < self.brtts[current + 1][0]:
-                    break
-                current += 1
-
-            # If brtt reaches the last element
-            if current + 1 >= len(self.brtts):
-                continue
-            else:
-                offset_points.append((rrtt_ts, rrtt_us - self.brtts[current][1]))
-
-        self.offsets2 = np.array(offset_points)
-
-    def generate_offsets3(self):
-        offset_points = []
-        current = 0
-        for (rrtt_ts, rrtt_us, rrtt_min) in self.rrtts:
-            if rrtt_ts < self.trtts[current][0]:
-                continue
-
-            while True:
-                if current + 1 >= len(self.trtts):
-                    break
-                if rrtt_ts >= self.trtts[current][0] and \
-                    rrtt_ts < self.trtts[current + 1][0]:
-                    break
-                current += 1
-
-            # If brtt reaches the last element
-            if current + 1 >= len(self.trtts):
-                continue
-            else:
-                offset_points.append((rrtt_ts, rrtt_us - self.trtts[current][1]))
-
-        self.offsets3 = np.array(offset_points)
+        self.rtts = sorted(self.rtts, key=lambda x: x.rack_recv)
+        with open(output, 'w') as rtt_file:
+            for rtt in self.rtts:
+                line = f"{rtt.rack_recv} {rtt.rack_recv - self.init_ts:>11.0f} {rtt.mark}   " +  \
+                       f"{rtt.trtt:>8.3f} {rtt.brtt:>8.3f} {rtt.offset:>8.3f}   " + \
+                       f"{rtt.rack_send:>11.0f} {rtt.fq_dequeue:>11.0f} {rtt.offset_send:>8.3f}   " + \
+                       f"{rtt.xdp_ingress:>11.0f} {rtt.rack_recv:>11.0f} {rtt.offset_recv:>8.3f}   " + \
+                       f"{rtt.fq:>8.3f} {rtt.tc_fq:>8.3f}\n"
+                rtt_file.write(line)
+        
+        return True
 
     def parse_bbr_update_model(self, tokens, trtt_points):
         sport = int(tokens[6])
@@ -583,40 +367,6 @@ class Flow:
         trtt_points.append((ts, trtt_us))
         return
     
-    def parse_tcp_rack_advance(self, tokens, rrtt_points, current_marks):
-        sport = int(tokens[2])
-        if self.sport != sport:
-            return None
-
-        if not current_marks.get(sport):
-            return None
-        current_mark = current_marks[sport]
-        
-        ts = int(tokens[0])
-        rtt_us = int(tokens[5])
-        tcp_min_rtt_us = int(tokens[6])
-        rack_mstamp_ns = int(tokens[7]) * 1000
-        xmit_time_ns = int(tokens[8]) * 1000
-        tcp_mstamp_ns = int(tokens[9]) * 1000
-
-        if rtt_us < tcp_min_rtt_us:
-            return None
-        # if rtt_us < tcp_min_rtt_us * 3:
-        #     print(f"{ts} tcp_rack_advance() {sport} {rtt_us} {tcp_min_rtt_us}")
-        
-        measured_rtt = MeasuredRTT(ts, xmit_time_ns, tcp_mstamp_ns)
-
-        # Mark-based TRTT
-        if current_mark in self.marked_trtts:
-            trtts_at_current_mark = self.marked_trtts[current_mark]
-            trtts_at_current_mark.append(measured_rtt)
-        else:
-            trtts_at_current_mark = [measured_rtt]
-            self.marked_trtts[current_mark] = trtts_at_current_mark
-
-        rrtt_points.append((ts, rtt_us, tcp_min_rtt_us))
-        return
-
     def parse_loss_event(self, tokens, loss_points, reo_wnd_used):
         ts = int(tokens[0])
         
@@ -661,7 +411,6 @@ class Flow:
             
             loss_points.append((ts,
                 LossEvent(ts, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd_used, waiting)))
-            # print(f"Loss. {ts} {skb} {rack_rtt_us + reo_wnd_used} {waiting} {gso_segs}, {lost_bytes}")
             return reo_wnd_used
 
     def parse_tcp_retransmit_skb(self, tokens, retrans_points, is_valid):
@@ -699,7 +448,6 @@ class Flow:
             if len(dsack_points) == 0:
                 return
             (_, last_dsack) = dsack_points.pop()
-            # print(f"SP true. {last_dsack}")
             sr_points.append((ts, last_dsack))
             return
         
@@ -714,7 +462,6 @@ class Flow:
         left = switch_endian(tokens[3])
         right = switch_endian(tokens[4])
         dsack_points.append((ts, Segment(left, right)))
-        # print(f"Current SP. {dsack_points[-1]}")
         return
 
     def parse_tcp_rate_skb_delivered(self, tokens, delivered_points):
@@ -730,7 +477,7 @@ class Flow:
         delivered_points.append((ts, Segment(left, right)))
         return        
 
-    def analyze_spurious_retrans(self):
+    def analyze_spurious_retrans(self, output):
         # skb is not an unique identifier.
         loss_map = {}
         partial_segments = []
@@ -851,36 +598,31 @@ class Flow:
         #           f"{delivered.left} {delivered.right}",
         #           f"{delivered.bytelen} {delivered.seglen}")
         
-        if len(post_sr) > 0:
-            print("            Loss_TS  L rack reo    w      diff      late            B_TS   B_diff       off      soff      roff            A_TS   A_diff       off      soff      roff")
-        for key in post_sr.keys():
-            segment = Segment(key[0], key[1])
-            (delivered_ts, found_loss) = post_sr[key]
-            diff = (delivered_ts - found_loss.ts) / 1000
-            lateness = found_loss.waiting + diff - (found_loss.rack_rtt_us + found_loss.reo_wnd)
-            (offset_before, offset_after) = self.relevant_offsets(found_loss.ts)
-            # diff_offset = offset_before.offset - offset_after.offset
-            # diff_send_offset = offset_before.offset_send - offset_after.offset_send
-            # diff_recv_offset = offset_before.offset_recv - offset_after.offset_recv
+        with open(output, "w") as sr_file:
+            for key in post_sr.keys():
+                segment = Segment(key[0], key[1])
+                (delivered_ts, found_loss) = post_sr[key]
+                lateness = (delivered_ts - found_loss.ts - found_loss.reo_wnd) / 1_000
+                lateness = found_loss.waiting + lateness - (found_loss.rack_rtt_us + found_loss.reo_wnd)
+                (rtt_before, rtt_after) = self.relevant_rtt(found_loss.ts)
+                # offset_diff = 
+                # line = f"{found_loss.ts:15.0f} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff:9.3f}   " + \
+                #     f"{lateness:9.3f} " + \
+                #     f"{rtt_before.rack_recv:15.0f} {abs(found_loss.ts - rtt_before.rack_recv) / 1_000 :8.3f} {rtt_before.offset:9.3f} {rtt_before.offset_send:9.3f} {rtt_before.offset_recv:9.3f} " + \
+                #     f"{rtt_after.rack_recv:15.0f} {abs(rtt_after.rack_recv - found_loss.ts) / 1_000 :8.3f} {rtt_after.offset:9.3f} {rtt_after.offset_send:9.3f} {rtt_after.offset_recv:9.3f}\n"
+                line = f"{found_loss.ts} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} " + \
+                       f"{delivered_ts:15.0f}\n"
+                sr_file.write(line)
             
-            print(f"SR: {found_loss.ts:15.0f}",
-                  f"{segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff:9.3f} {lateness:9.3f}",
-                  f"{offset_before.tcp_recv:15.0f} {abs(found_loss.ts - offset_before.tcp_recv) / 1_000 :8.3f} {offset_before.offset:9.3f} {offset_before.offset_send:9.3f} {offset_before.offset_recv:9.3f}",
-                  f"{offset_after.tcp_recv:15.0f} {abs(offset_after.tcp_recv - found_loss.ts) / 1_000 :8.3f} {offset_after.offset:9.3f} {offset_after.offset_send:9.3f} {offset_after.offset_recv:9.3f}")
+        return True
             
-            # lateness = found_loss.rack_rtt_us + found_loss.reo_wnd - found_loss.waiting - diff / 1_000
-            # (ts, offset) = self.relevant_offset(found_loss.ts)
-            # print(f"SR: {self.sk} {segment.seglen}",
-            #         f"{lateness:.3} {found_loss.ts} {offset:.3}")
-            
-    def relevant_offsets(self, ts):
-        befores = [t for t in self.synced_offsets if t.tcp_recv <= ts]
-        print(len(befores))
-        if len(self.synced_offsets) >= len(befores) + 1:
-            next = self.synced_offsets[len(befores)]
-            return (max(befores, key=lambda x: x.tcp_recv), next)
+    def relevant_rtt(self, ts):
+        befores = [t for t in self.rtts if t.rack_recv <= ts]
+        if len(self.rtts) >= len(befores) + 1:
+            next = self.rtts[len(befores)]
+            return (max(befores, key=lambda x: x.rack_recv), next)
         else:
-            return (max(befores, key=lambda x: x.tcp_recv), max(befores, key=lambda x: x.tcp_recv))
+            return (max(befores, key=lambda x: x.rack_recv), max(befores, key=lambda x: x.rack_recv))
 
     def retrans_segments(self):
         num_segs = 0
@@ -888,6 +630,16 @@ class Flow:
             num_segs += retrans.segsent
 
         return num_segs
+    
+    def statistics(self):
+        trtt = (np.mean([rtt.trtt for rtt in self.rtts]), np.std([rtt.trtt for rtt in self.rtts]))
+        brtt = (np.mean([rtt.brtt for rtt in self.rtts]), np.std([rtt.brtt for rtt in self.rtts]))
+        offset = (np.mean([rtt.offset for rtt in self.rtts]), np.std([rtt.offset for rtt in self.rtts]))
+        offset_send = (np.mean([rtt.offset_send for rtt in self.rtts]), np.std([rtt.offset_send for rtt in self.rtts]))
+        offset_recv = (np.mean([rtt.offset_recv for rtt in self.rtts]), np.std([rtt.offset_recv for rtt in self.rtts]))
+        fq = (np.mean([rtt.fq for rtt in self.rtts]), np.std([rtt.fq for rtt in self.rtts]))
+
+        return (trtt, brtt, offset, offset_send, offset_recv, fq)
 
 def intersection_segs(left1, right1, left2, right2):
     left_max = max(int(left1, 16), int(left2, 16))

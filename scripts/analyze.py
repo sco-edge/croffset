@@ -5,12 +5,6 @@ import argparse
 import os
 import json
 
-saddr = "192.168.2.102"
-first_sport = 42000
-daddr = "192.168.2.103"
-first_dport_iperf = 5200
-first_dport_neper = 5300
-
 class Config:
     app = None
     cca = None
@@ -18,12 +12,22 @@ class Config:
     host = None
     container = None
 
+    saddr = None
+    daddr = None
+    first_sport = None
+    first_dport = None
+
     def __init__(self, app, cca, loss_detection, host, container):
         self.app = app
         self.cca = cca
         self.loss_detection = loss_detection
         self.host = host
         self.container = container
+
+        self.saddr = "192.168.2.102"
+        self.daddr = "192.168.2.103"
+        self.first_sport= 42000
+        self.first_dport = 5300 if self.app == "neper" else 5200
 
 def identify_configs(experiment):
     with open(f"summary.{experiment}.json", 'r') as file:
@@ -37,14 +41,98 @@ def identify_configs(experiment):
             container_index += 1
 
         if "app" in summary and "cca" in summary and "loss_detection" in summary:
+            available_apps = ["iperf", "neper"]
             app = summary["app"]
+            if app not in available_apps:
+                print(f"{app} is not an available app. Available: {', '.join(available_apps)}")
+                return None
+
+            available_ccas = ["bbr", "cubic"]
             cca = summary["cca"]
+            if cca not in available_ccas:
+                print(f"{cca} is not an available cca. Available: {', '.join(available_ccas)}")
+                return None
+
+            available_loss_detection = ["rack-tlp", "rack-er", "rack-none", "reno-tlp", "reno-er", "reno-none"]
             loss_detection = summary["loss_detection"]
+            if loss_detection not in available_loss_detection:
+                print(f"{loss_detection} is not an available loss detection. Available: {', '.join(available_loss_detection)}")
+                return None
         else:
+            print("Wrong summary.")
             return None
 
     return Config(app, cca, loss_detection, host_index, container_index)
 
+def analyze_traces(num_flows, is_container):
+    flows = []
+    protocol = "UDP" if is_container else "TCP"
+
+    for i in range(0, num_flows):
+        flow_id = f"c{i}" if is_container else f"h{i}"
+        flow = croffset.Flow(protocol, configs.saddr, configs.first_sport + i,
+                              configs.daddr, configs.first_dport + i, configs.app)
+
+        if not flow.parse_xdp_trace(f"xdp.{args.experiment}.out"):
+            print(f"parse_xdp_trace() at {flow_id} failed.")
+            exit(-1)
+
+        if not flow.parse_rack_trace(f"rack.{args.experiment}.out"):
+            print(f"parse_rack_trace() at {flow_id} failed.")
+            exit(-1)
+
+        if not flow.parse_fq_trace(f"fq.{args.experiment}.out"):
+            print(f"parse_fq_trace() at {flow_id} failed.")
+            exit(-1)
+
+        if not flow.parse_sock_trace(f"sock.{args.experiment}.out"):
+            print(f"parse_sock_trace() at {flow_id} failed.")
+            exit(-1)
+
+        if not flow.construct_rtts(f"rtt.{flow_id}.{args.experiment}.out"):
+            print(f"construct_rtts() at {flow_id} failed.")
+            exit(-1)
+
+        if not flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out"):
+            print(f"analyze_spurious_retrans() at {flow_id} failed.")
+            exit(-1)
+
+        # Writing to the summary.json
+        summary_json = f"summary.{args.experiment}.json"
+        with open(summary_json, 'r') as file:
+            data = json.load(file)
+
+        if not data.get(flow_id):
+            print(f"Writing to summary.json failed at {flow_id}.")
+            continue
+
+        (trtt, brtt, offset, offset_send, offset_recv, fq) = flow.statistics()
+        data[flow_id]["trtt_mean"] = trtt[0]
+        data[flow_id]["trtt_std"] = trtt[1]
+        data[flow_id]["brtt_mean"] = brtt[0]
+        data[flow_id]["brtt_std"] = brtt[1]
+        data[flow_id]["offset_mean"] = offset[0]
+        data[flow_id]["offset_std"] = offset[1]
+        data[flow_id]["offset_send_mean"] = offset_send[0]
+        data[flow_id]["offset_send_std"] = offset_send[1]
+        data[flow_id]["offset_recv_mean"] = offset_recv[0]
+        data[flow_id]["offset_recv_std"] = offset_recv[1]
+        data[flow_id]["fq_mean"] = fq[0]
+        data[flow_id]["fq_std"] = fq[1]
+
+        with open(summary_json, 'w') as file:
+            json.dump(data, file, indent=4)
+
+        flows.append(flow)
+    
+    return flows
+
+def plot_traces(flows, is_container):
+    for i, flow in enumerate(flows):
+        flow_id = f"c{i}" if is_container else f"h{i}"
+        plot.plot_rtts(flow, f"rtt_{flow_id}", True)
+        plot.plot_offsets(flow, f"offset_{flow_id}", True)
+        
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument('experiment')
@@ -58,129 +146,16 @@ if __name__ == "__main__":
     iwd = os.getcwd()
     os.chdir(os.path.join(iwd, '..', 'output', args.experiment))
 
-    if args.cca != "bbr" and args.cca != "cubic":
-        print(f"There is no such an algorithm \"{args.cca}\"")
-        exit()
-
     configs = identify_configs(args.experiment)
     if configs == None:
         print("Failed to parse config.")
         exit(-1)
 
-    # Host flows
-    hflows = []
-    for i in range(0, configs.host):
-        if configs.app == "neper":
-            hflow = croffset.Flow("TCP", saddr, first_sport + i, daddr, first_dport_neper + i, "neper")
-        else:
-            hflow = croffset.Flow("TCP", saddr, first_sport + i, daddr, first_dport_iperf + i, "iperf")
-        hflows.append(hflow)
+    # Main logic
+    hflows = analyze_traces(configs.host, False)
+    cflows = analyze_traces(configs.container, True)
 
-    # brtt_file = f"brtt.{args.experiment}.out"
-    # for hflow in hflows:
-    #     if not hflow.parse_brtt_trace(brtt_file):
-    #         exit(-1)
-
-    xdpts_file = f"xdpts.{args.experiment}.out"
-    for hflow in hflows:
-        if not hflow.parse_xdpts_trace(xdpts_file):
-            exit(-1)
-
-    trtt_file = f"trtt.{args.experiment}.out"
-    rrtt_file = f"trtt_rack.{args.experiment}.out"
-    for hflow in hflows:
-        if configs.cca == "bbr":
-            if not hflow.parse_trtt_trace_bbr(trtt_file):
-                exit(-1)
-        elif configs.cca == "cubic":
-            if not hflow.parse_trtt_trace_cubic(trtt_file):
-                exit(-1)
-        # if not hflow.parse_rrtt_trace(rrtt_file):
-        #     exit(-1)
-        if not hflow.parse_marked_trtt_trace(rrtt_file):
-            exit(-1)
-        hflow.parse_fq_delay_trace(f"fq_delay.{args.experiment}.out")
-        hflow.generate_synced_offsets(f"so_h{i}.{args.experiment}.out")
-        # with open(f"so_h{i}.{args.experiment}.out", 'w') as file:
-        #     for (ts, offset, sent_offset, acked_offset) in hflow.synced_offsets:
-        #         line = f"{ts + hflow.init_ts:.0f} {ts:.0f} {offset:.3f} {sent_offset:.3f} {acked_offset:.3f}"
-        #         file.write(line + '\n')
-        # hflow.generate_offsets()
-        # hflow.generate_offsets2()
-        # hflow.generate_offsets3()
-    
-    sock_file = f"sock.{args.experiment}.out"
-    for i, hflow in enumerate(hflows):
-        hflow.parse_sock_trace(sock_file)
-
-    # Container flows
-    cflows = []
-    for i in range(0, configs.container):
-        if configs.app == "neper":
-            cflow = croffset.Flow("UDP", saddr, first_sport + i, daddr, first_dport_neper + i, "neper")
-        else:
-            cflow = croffset.Flow("UDP", saddr, first_sport + i, daddr, first_dport_iperf + i, "iperf")
-        cflows.append(cflow)
-    
-    # brtt_file = f"brtt.{args.experiment}.out"
-    # for cflow in cflows:
-    #     if not cflow.parse_brtt_trace(brtt_file):
-    #         exit(-1)
-
-    xdpts_file = f"xdpts.{args.experiment}.out"
-    for cflow in cflows:
-        if not cflow.parse_xdpts_trace(xdpts_file):
-            exit(-1)
-
-    trtt_file = f"trtt.{args.experiment}.out"
-    rrtt_file = f"trtt_rack.{args.experiment}.out"
-    for i, cflow in enumerate(cflows):
-        if configs.cca == "bbr":
-            if not cflow.parse_trtt_trace_bbr(trtt_file):
-                exit(-1)
-        elif configs.cca == "cubic":
-            if not cflow.parse_trtt_trace_cubic(trtt_file):
-                exit(-1)
-        # if not cflow.parse_rrtt_trace(rrtt_file):
-        #     exit(-1)
-        if not cflow.parse_marked_trtt_trace(rrtt_file):
-            exit(-1)
-        cflow.parse_fq_delay_trace(f"fq_delay.{args.experiment}.out")
-        cflow.generate_synced_offsets(f"so_c{i}.{args.experiment}.out")
-        # with open(f"so_c{i}.{args.experiment}.out", 'w') as file:
-        #     for (ts, offset, sent_offset, acked_offset) in cflow.synced_offsets:
-        #         line = f"{ts + cflow.init_ts:.0f} {ts:.0f} {offset:.3f} {sent_offset:.3f} {acked_offset:.3f}"
-        #         file.write(line + '\n')
-
-        # cflow.generate_offsets()
-        # cflow.generate_offsets2()
-        # cflow.generate_offsets3()
-
-    sock_file = f"sock.{args.experiment}.out"
-    for i, cflow in enumerate(cflows):
-        cflow.parse_sock_trace(sock_file)
-
-    # Analyze spurious retransmissions
-    for i, hflow in enumerate(hflows):
-        print(f"h{i} retransmissions:", hflow.retrans_segments())
-        hflow.analyze_spurious_retrans()
-    for i, cflow in enumerate(cflows):
-        print(f"c{i} retransmissions:", cflow.retrans_segments())
-        cflow.analyze_spurious_retrans()
-
-    # Plot
+    # Plotting
     if args.plot == True:
-        for i, hflow in enumerate(hflows):
-            # plot.plot_rtts(hflow, f"rtts_h{i}", True)
-            plot.plot_synced_offsets(hflow, f"soffsets_h{i}", True)
-            # plot.plot_diff_offsets(hflow, f"doffsets_h{i}", True)
-            # plot.plot_offsets(hflow, f"offsets_h{i}", True)
-            # plot.plot_offsets2(hflow, f"offsets2_h{i}", True)
-            # plot.plot_offsets3(hflow, f"offsets3_h{i}", True)
-        for i, cflow in enumerate(cflows):
-            # plot.plot_rtts(cflow, f"rtts_c{i}", True)
-            plot.plot_synced_offsets(cflow, f"soffsets_c{i}", True)
-            # plot.plot_diff_offsets(cflow, f"doffsets_c{i}", True)
-            # plot.plot_offsets(cflow, f"offsets_c{i}", True)
-            # plot.plot_offsets2(cflow, f"offsets2_c{i}", True)
-            # plot.plot_offsets3(cflow, f"offsets3_c{i}", True)
+        plot_traces(hflows, False)
+        plot_traces(cflows, True)

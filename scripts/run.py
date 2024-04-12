@@ -175,7 +175,7 @@ def summarize_statistics(hflows, cflows):
         json_data["container_rtt_std"] = np.std(rtts)
 
     with open(f'summary.{experiment}.json', 'w') as f:
-        json.dump(json_data, f)
+        json.dump(json_data, f, indent=4)
 
 def main():
     duration = int(args.time)
@@ -288,7 +288,7 @@ def start_instruments(interface):
     instrument_procs.append(cpuload_p)
 
     # brtt
-    with open(f'xdpts.{experiment}.out', 'w') as brtt_f:
+    with open(f'xdp.{experiment}.out', 'w') as brtt_f:
         if int(args.container) > 0:
             brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
                                       stdout=brtt_f, cwd=os.path.join(iwd, '../xdpts'))
@@ -298,23 +298,23 @@ def start_instruments(interface):
     instrument_files.append(brtt_f)
     instrument_procs.append(brtt_p)
 
-    # trtt
-    with open(f'trtt.{experiment}.out', 'w') as trtt_f:
-        trtt_p = subprocess.Popen(["./trtt_rack_bbr.bt"],
-                                  stdout=trtt_f, cwd=os.path.join(iwd, '../bpftraces'))
-    instrument_files.append(trtt_f)
-    instrument_procs.append(trtt_p)
+    # # trtt
+    # with open(f'trtt.{experiment}.out', 'w') as trtt_f:
+    #     trtt_p = subprocess.Popen(["./trtt_rack_bbr.bt"],
+    #                               stdout=trtt_f, cwd=os.path.join(iwd, '../bpftraces'))
+    # instrument_files.append(trtt_f)
+    # instrument_procs.append(trtt_p)
 
     # trtt for rack
-    with open(f'trtt_rack.{experiment}.out', 'w') as trtt_rack_f:
-        trtt_rack_p = subprocess.Popen(["./trtt_rack.bt"],
+    with open(f'rack.{experiment}.out', 'w') as trtt_rack_f:
+        trtt_rack_p = subprocess.Popen(["./rack.bt"],
                                   stdout=trtt_rack_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(trtt_rack_f)
     instrument_procs.append(trtt_rack_p)
 
     # fq_delay for calculating actual xmit
-    with open(f'fq_delay.{experiment}.out', 'w') as fq_delay_f:
-        fq_delay_p = subprocess.Popen(["./fq_delay.bt"],
+    with open(f'fq.{experiment}.out', 'w') as fq_delay_f:
+        fq_delay_p = subprocess.Popen(["./fq.bt"],
                                   stdout=fq_delay_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(fq_delay_f)
     instrument_procs.append(fq_delay_p)
@@ -552,6 +552,10 @@ if __name__ == "__main__":
 
     global args
     args = parser.parse_args()
+
+    if int(args.host) < 0 or int(args.container) < 0 or (int(args.host) == 0 and int(args.container) == 0):
+        print(f"Check the number of flows")
+        exit()
 
     available_apps = ["iperf", "neper"]
     if args.app not in available_apps:
