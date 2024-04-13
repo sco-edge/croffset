@@ -93,9 +93,7 @@ def analyze_traces(num_flows, is_container):
             print(f"construct_rtts() at {flow_id} failed.")
             exit(-1)
 
-        if not flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out"):
-            print(f"analyze_spurious_retrans() at {flow_id} failed.")
-            exit(-1)
+        sr_count = flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out", False)
 
         # Writing to the summary.json
         summary_json = f"summary.{args.experiment}.json"
@@ -120,6 +118,41 @@ def analyze_traces(num_flows, is_container):
         data[flow_id]["fq_mean"] = fq[0]
         data[flow_id]["fq_std"] = fq[1]
 
+        data[flow_id]["sr_count"] = sr_count
+
+        with open(summary_json, 'w') as file:
+            json.dump(data, file, indent=4)
+
+        flows.append(flow)
+    
+    return flows
+
+def analyze_sock_trace_only(num_flows, is_container):
+    flows = []
+    protocol = "UDP" if is_container else "TCP"
+
+    for i in range(0, num_flows):
+        flow_id = f"c{i}" if is_container else f"h{i}"
+        flow = croffset.Flow(protocol, configs.saddr, configs.first_sport + i,
+                              configs.daddr, configs.first_dport + i, configs.app)
+
+        if not flow.parse_sock_trace(f"sock.{args.experiment}.out"):
+            print(f"parse_sock_trace() at {flow_id} failed.")
+            exit(-1)
+
+        sr_count = flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out", True)
+
+        # Writing to the summary.json
+        summary_json = f"summary.{args.experiment}.json"
+        with open(summary_json, 'r') as file:
+            data = json.load(file)
+
+        if not data.get(flow_id):
+            print(f"Writing to summary.json failed at {flow_id}.")
+            continue
+
+        data[flow_id]["sr_count"] = sr_count
+
         with open(summary_json, 'w') as file:
             json.dump(data, file, indent=4)
 
@@ -138,18 +171,25 @@ if __name__ == "__main__":
     argparser.add_argument('experiment')
     argparser.add_argument('--cca', default="bbr")
     argparser.add_argument('--plot', '-p', action='store_true')
+    argparser.add_argument('--sock-only', action='store_true')
+    argparser.add_argument('--path', default="../output")
 
     global args
     args = argparser.parse_args()
 
     global iwd
     iwd = os.getcwd()
-    os.chdir(os.path.join(iwd, '..', 'output', args.experiment))
+    os.chdir(os.path.join(iwd, args.path, args.experiment))
 
     configs = identify_configs(args.experiment)
     if configs == None:
         print("Failed to parse config.")
         exit(-1)
+
+    if args.sock_only:
+        hflows = analyze_sock_trace_only(configs.host, False)
+        cflows = analyze_sock_trace_only(configs.container, True)
+        exit()
 
     # Main logic
     hflows = analyze_traces(configs.host, False)

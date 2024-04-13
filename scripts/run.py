@@ -218,6 +218,10 @@ def main():
     if not args.no_instrument:
         measurement_starts = start_system_measurements()
         (instrument_files, instrument_procs) = start_instruments(interface)
+    
+    # sock trace only for checking spurious retransmissions
+    if args.no_instrument and args.sock_only:
+        (instrument_files, instrument_procs) = start_sock_instrument(interface)
         
     time.sleep(4)
 
@@ -231,6 +235,11 @@ def main():
     if not args.no_instrument:
         end_system_measurements(measurement_starts)
         end_instruments(instrument_files, instrument_procs)
+
+    # sock trace only for checking spurious retransmissions
+    if args.no_instrument and args.sock_only:
+        for proc in instrument_procs:
+            proc.kill()
 
     if len(hflows) != int(args.host) or len(cflows) != int(args.container):
         print(f'Inconsistent # flow. hflows={len(hflows)}, cflows={len(cflows)}')
@@ -287,7 +296,7 @@ def start_instruments(interface):
     instrument_files.append(cpuload_f)
     instrument_procs.append(cpuload_p)
 
-    # brtt
+    # xdp
     with open(f'xdp.{experiment}.out', 'w') as brtt_f:
         if int(args.container) > 0:
             brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
@@ -298,27 +307,33 @@ def start_instruments(interface):
     instrument_files.append(brtt_f)
     instrument_procs.append(brtt_p)
 
-    # # trtt
-    # with open(f'trtt.{experiment}.out', 'w') as trtt_f:
-    #     trtt_p = subprocess.Popen(["./trtt_rack_bbr.bt"],
-    #                               stdout=trtt_f, cwd=os.path.join(iwd, '../bpftraces'))
-    # instrument_files.append(trtt_f)
-    # instrument_procs.append(trtt_p)
-
-    # trtt for rack
+    # rack
     with open(f'rack.{experiment}.out', 'w') as trtt_rack_f:
         trtt_rack_p = subprocess.Popen(["./rack.bt"],
                                   stdout=trtt_rack_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(trtt_rack_f)
     instrument_procs.append(trtt_rack_p)
 
-    # fq_delay for calculating actual xmit
+    # fq
     with open(f'fq.{experiment}.out', 'w') as fq_delay_f:
         fq_delay_p = subprocess.Popen(["./fq.bt"],
                                   stdout=fq_delay_f, cwd=os.path.join(iwd, '../bpftraces'))
     instrument_files.append(fq_delay_f)
     instrument_procs.append(fq_delay_p)
     
+    # sock
+    with open(f'sock.{experiment}.out', 'w') as sock_f:
+        sock_p = subprocess.Popen(["./sock.bt"],
+                                  stdout=sock_f, cwd=os.path.join(iwd, '../bpftraces'))
+    instrument_files.append(sock_f)
+    instrument_procs.append(sock_p)
+
+    return (instrument_files, instrument_procs)
+
+def start_sock_instrument(interface):
+    instrument_files = []
+    instrument_procs =[]
+
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
         sock_p = subprocess.Popen(["./sock.bt"],
@@ -548,7 +563,7 @@ if __name__ == "__main__":
     parser.add_argument('--cca', default='bbr')
     parser.add_argument('--loss-detection', default='rack-tlp')
     parser.add_argument('--no-instrument', action='store_true')
-    parser.add_argument('--no-measurement', action='store_true')
+    parser.add_argument('--sock-only', action='store_true')
 
     global args
     args = parser.parse_args()

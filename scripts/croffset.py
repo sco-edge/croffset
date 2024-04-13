@@ -372,7 +372,7 @@ class Flow:
         
         if tokens[1] == "tcp_rack_detect_loss()" and tokens[2] == "enter":
             sk = tokens[3]
-            if self.sk != sk:
+            if self.sk and self.sk != sk:
                 return
             
             reord_seen = int(tokens[4])
@@ -393,7 +393,7 @@ class Flow:
         
         if tokens[1] == "tcp_mark_skb_lost()":
             sk = tokens[2]
-            if self.sk != sk:
+            if self.sk and self.sk != sk:
                 return reo_wnd_used
             
             if reo_wnd_used == None:
@@ -417,7 +417,7 @@ class Flow:
         ts = int(tokens[0])
         if tokens[1] == "tcp_retransmit_skb()":
             sk = tokens[2]
-            if self.sk != sk:
+            if self.sk and self.sk != sk:
                 is_valid = False
                 return
             
@@ -452,10 +452,13 @@ class Flow:
             return
         
         sk = tokens[2]
-        # if self.sk == None:
-        #     self.sk = sk
+        port = int(tokens[6])
 
-        if self.sk != sk:
+        if port != self.sport:
+            return
+
+        # If sock-only mode is enabled, sk is None
+        if self.sk and self.sk != sk:
             return
         
         # DSACK event follows network byte order
@@ -468,7 +471,7 @@ class Flow:
         ts = int(tokens[0])
 
         sk = tokens[2]
-        if self.sk != sk:
+        if self.sk and self.sk != sk:
             return
 
         skb = padded_hex(int(tokens[3], 16), 16)
@@ -477,7 +480,7 @@ class Flow:
         delivered_points.append((ts, Segment(left, right)))
         return        
 
-    def analyze_spurious_retrans(self, output):
+    def analyze_spurious_retrans(self, output, count_only):
         # skb is not an unique identifier.
         loss_map = {}
         partial_segments = []
@@ -598,9 +601,18 @@ class Flow:
         #           f"{delivered.left} {delivered.right}",
         #           f"{delivered.bytelen} {delivered.seglen}")
         
-        with open(output, "w") as sr_file:
+        if count_only:
+            count = 0
             for key in post_sr.keys():
                 segment = Segment(key[0], key[1])
+                count += segment.seglen
+            return count
+        
+        with open(output, "w") as sr_file:
+            count = 0
+            for key in post_sr.keys():
+                segment = Segment(key[0], key[1])
+                count += segment.seglen
                 (delivered_ts, found_loss) = post_sr[key]
                 lateness = (delivered_ts - found_loss.ts - found_loss.reo_wnd) / 1_000
                 lateness = found_loss.waiting + lateness - (found_loss.rack_rtt_us + found_loss.reo_wnd)
@@ -613,8 +625,8 @@ class Flow:
                 line = f"{found_loss.ts} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} " + \
                        f"{delivered_ts:15.0f}\n"
                 sr_file.write(line)
-            
-        return True
+        
+        return count
             
     def relevant_rtt(self, ts):
         befores = [t for t in self.rtts if t.rack_recv <= ts]
