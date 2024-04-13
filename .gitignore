@@ -6,7 +6,9 @@ iperfs/rust-iperf/target/
 *.o
 *.csv
 *.log
+*.out
 scripts/*.png
 **/__pycache__/
 .vscode/
-.memo.md
+memo.md
+dataset/
