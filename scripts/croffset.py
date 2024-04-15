@@ -486,7 +486,7 @@ class Flow:
         partial_segments = []
 
         for (loss_ts, loss) in self.losses:
-            # print(f"Loss. {loss_ts + self.init_ts:<14} {loss_ts / 1_000_000_000:<11}",
+            # print(f"Loss. {loss_ts:<14} {loss_ts / 1_000_000_000:<11}",
             #       f"{loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us}",
             #       f"{loss.reo_wnd} {loss.waiting} {loss}")
             if loss_map.get(loss.skb) == None:
@@ -505,7 +505,7 @@ class Flow:
 
         # Map retransmissions to loss events
         for (r_ts, retrans) in self.retrans:
-            # print(f"Retx. {r_ts + self.init_ts:<14} {r_ts / 1_000_000_000:<11}",
+            # print(f"Retx. {r_ts:<14} {r_ts / 1_000_000_000:<11}",
             #       f"{retrans.skb} {retrans.segment.left} {retrans.segment.right}",
             #       f"{retrans.segment.bytelen} {retrans.segment.seglen} {retrans.segsent}", end=" ", flush=True)
             candidate_losses = loss_map.get(retrans.skb)
@@ -543,7 +543,8 @@ class Flow:
                         new_loss.seg_right = retrans.segment.right
                         # print(f"Tail Matched. {retrans.loss_event.skb}", flush=True)
                         candidate_losses = loss_map.get(new_loss.skb)
-                        candidate_losses.remove(new_loss)
+                        if new_loss in candidate_losses:
+                            candidate_losses.remove(new_loss)
                         partial_segments.remove((partial_segment, new_loss, segremained))
                         break
                     else:
@@ -603,14 +604,14 @@ class Flow:
         
         if count_only:
             count = 0
-            for key in post_sr.keys():
+            for key in post_sr:
                 segment = Segment(key[0], key[1])
                 count += segment.seglen
             return count
         
         with open(output, "w") as sr_file:
             count = 0
-            for key in post_sr.keys():
+            for key in post_sr:
                 segment = Segment(key[0], key[1])
                 count += segment.seglen
                 (delivered_ts, found_loss) = post_sr[key]
