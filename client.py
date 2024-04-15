@@ -8,25 +8,25 @@ import argparse
 import logging
 
 def main():
-    global iwd
-    iwd = os.getcwd()
+    global swd
+    swd = os.path.join(os.getcwd(), 'scripts')
 
     global experiment
     experiment = f"run-0"
 
     initialize_nic()
 
-    if not os.path.exists(os.path.join(iwd, '..', 'output')):
-        os.mkdir(os.path.join(iwd, '..', 'output'))
-    os.chdir(os.path.join(iwd, '..', 'output'))
+    if not os.path.exists(os.path.join(swd, '..', 'output')):
+        os.mkdir(os.path.join(swd, '..', 'output'))
+    os.chdir(os.path.join(swd, '..', 'output'))
 
-    while os.path.exists(os.path.join(iwd, '..', 'output', experiment)):
+    while os.path.exists(os.path.join(swd, '..', 'output', experiment)):
         (remained, last) = experiment.rsplit("-", 1)
         trial = int(last) + 1
         experiment = f"{remained}-{trial}"
 
-    os.mkdir(os.path.join(iwd, '..', 'output', experiment))
-    os.chdir(os.path.join(iwd, '..', 'output', experiment))
+    os.mkdir(os.path.join(swd, '..', 'output', experiment))
+    os.chdir(os.path.join(swd, '..', 'output', experiment))
 
     if not args.no_instrument:
         measurement_starts = start_system_measurements()
@@ -52,8 +52,8 @@ def initialize_nic():
     time.sleep(0.5)
     subprocess.run(["modprobe", "ice"])
     time.sleep(0.5)
-    subprocess.Popen(["./flow_direction_rx_tcp.sh"], stdout=subprocess.DEVNULL, cwd=iwd).communicate()
-    subprocess.Popen(["./smp_affinity.sh"], stdout=subprocess.DEVNULL, cwd=iwd).communicate()
+    subprocess.Popen(["./flow_direction_rx_tcp.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
+    subprocess.Popen(["./smp_affinity.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
 
 def start_system_measurements():
     measurements_starts = []
@@ -76,14 +76,14 @@ def end_system_measurements(measurements_starts):
     subprocess.run(["cat", "/proc/interrupts"], stdout=end_interrupts_f)
     with open(f'interrupts.{experiment}.out', 'w') as interrupts_output:
         subprocess.Popen(["./interrupts.py", measurements_starts[0].name, end_interrupts_f.name],
-                         stdout=interrupts_output, cwd=iwd).communicate()
+                         stdout=interrupts_output, cwd=swd).communicate()
 
     # softirqs
     end_softirqs_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/softirqs"], stdout=end_softirqs_f)
     with open(f'softirqs.{experiment}.out', 'w') as softirqs_output:
         subprocess.Popen(["./softirqs.py", measurements_starts[1].name, end_softirqs_f.name],
-                         stdout=softirqs_output, cwd=iwd).communicate()
+                         stdout=softirqs_output, cwd=swd).communicate()
 
 def start_instruments():
     instrument_files = []
@@ -91,7 +91,7 @@ def start_instruments():
 
     # CPU load
     cpuload_f = tempfile.NamedTemporaryFile()
-    cpuload_p = subprocess.Popen(['./cpuload.sh'], stdout=cpuload_f, cwd=iwd)
+    cpuload_p = subprocess.Popen(['./cpuload.sh'], stdout=cpuload_f, cwd=swd)
     instrument_files.append(cpuload_f)
     instrument_procs.append(cpuload_p)
 
@@ -102,7 +102,7 @@ def end_instruments(instrument_files, instruments_procs):
         proc.kill()
 
     with open(f'cpu.{experiment}.out', 'w') as cpu_output:
-        subprocess.Popen(["./cpu.py", instrument_files[0].name], stdout=cpu_output, cwd=iwd).communicate()
+        subprocess.Popen(["./cpu.py", instrument_files[0].name], stdout=cpu_output, cwd=swd).communicate()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

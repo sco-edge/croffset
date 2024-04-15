@@ -182,8 +182,8 @@ def main():
     server_addr = "192.168.2.103"
     interface = "ens801f0"
 
-    global iwd
-    iwd = os.getcwd()
+    global swd
+    swd = os.path.join(os.getcwd(), 'scripts')
 
     global experiment
     experiment = f"run-0"
@@ -192,17 +192,17 @@ def main():
         exit()
     initialize_nic()
 
-    if not os.path.exists(os.path.join(iwd, '..', 'output')):
-        os.mkdir(os.path.join(iwd, '..', 'output'))
-    os.chdir(os.path.join(iwd, '..', 'output'))
+    if not os.path.exists(os.path.join(swd, '..', 'output')):
+        os.mkdir(os.path.join(swd, '..', 'output'))
+    os.chdir(os.path.join(swd, '..', 'output'))
 
-    while os.path.exists(os.path.join(iwd, '..', 'output', experiment)):
+    while os.path.exists(os.path.join(swd, '..', 'output', experiment)):
         (remained, last) = experiment.rsplit("-", 1)
         trial = int(last) + 1
         experiment = f"{remained}-{trial}"
 
-    os.mkdir(os.path.join(iwd, '..', 'output', experiment))
-    os.chdir(os.path.join(iwd, '..', 'output', experiment))
+    os.mkdir(os.path.join(swd, '..', 'output', experiment))
+    os.chdir(os.path.join(swd, '..', 'output', experiment))
 
     if args.app == "neper":
         server_pods = get_k8s_servers('neper')
@@ -253,8 +253,8 @@ def initialize_nic():
     time.sleep(0.5)
     subprocess.run(["modprobe", "ice"])
     time.sleep(0.5)
-    subprocess.Popen(["./flow_direction_tx_tcp.sh"], stdout=subprocess.DEVNULL, cwd=iwd).communicate()
-    subprocess.Popen(["./smp_affinity.sh"], stdout=subprocess.DEVNULL, cwd=iwd).communicate()
+    subprocess.Popen(["./flow_direction_tx_tcp.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
+    subprocess.Popen(["./smp_affinity.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
 
 def start_system_measurements():
     measurements_starts = []
@@ -277,14 +277,14 @@ def end_system_measurements(measurements_starts):
     subprocess.run(["cat", "/proc/interrupts"], stdout=end_interrupts_f)
     with open(f'interrupts.{experiment}.out', 'w') as interrupts_output:
         subprocess.Popen(["./interrupts.py", measurements_starts[0].name, end_interrupts_f.name],
-                         stdout=interrupts_output, cwd=iwd).communicate()
+                         stdout=interrupts_output, cwd=swd).communicate()
 
     # softirqs
     end_softirqs_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/softirqs"], stdout=end_softirqs_f)
     with open(f'softirqs.{experiment}.out', 'w') as softirqs_output:
         subprocess.Popen(["./softirqs.py", measurements_starts[1].name, end_softirqs_f.name],
-                         stdout=softirqs_output, cwd=iwd).communicate()
+                         stdout=softirqs_output, cwd=swd).communicate()
 
 def start_instruments(interface):
     instrument_files = []
@@ -292,7 +292,7 @@ def start_instruments(interface):
 
     # CPU load
     cpuload_f = tempfile.NamedTemporaryFile()
-    cpuload_p = subprocess.Popen(['./cpuload.sh'], stdout=cpuload_f, cwd=iwd)
+    cpuload_p = subprocess.Popen(['./cpuload.sh'], stdout=cpuload_f, cwd=swd)
     instrument_files.append(cpuload_f)
     instrument_procs.append(cpuload_p)
 
@@ -300,31 +300,31 @@ def start_instruments(interface):
     with open(f'xdp.{experiment}.out', 'w') as brtt_f:
         if int(args.container) > 0:
             brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
-                                      stdout=brtt_f, cwd=os.path.join(iwd, '../xdpts'))
+                                      stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
         else:
             brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
-                                      stdout=brtt_f, cwd=os.path.join(iwd, '../xdpts'))
+                                      stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
     instrument_files.append(brtt_f)
     instrument_procs.append(brtt_p)
 
     # rack
     with open(f'rack.{experiment}.out', 'w') as trtt_rack_f:
         trtt_rack_p = subprocess.Popen(["./rack.bt"],
-                                  stdout=trtt_rack_f, cwd=os.path.join(iwd, '../bpftraces'))
+                                  stdout=trtt_rack_f, cwd=os.path.join(swd, '../bpftraces'))
     instrument_files.append(trtt_rack_f)
     instrument_procs.append(trtt_rack_p)
 
     # fq
     with open(f'fq.{experiment}.out', 'w') as fq_delay_f:
         fq_delay_p = subprocess.Popen(["./fq.bt"],
-                                  stdout=fq_delay_f, cwd=os.path.join(iwd, '../bpftraces'))
+                                  stdout=fq_delay_f, cwd=os.path.join(swd, '../bpftraces'))
     instrument_files.append(fq_delay_f)
     instrument_procs.append(fq_delay_p)
     
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
         sock_p = subprocess.Popen(["./sock.bt"],
-                                  stdout=sock_f, cwd=os.path.join(iwd, '../bpftraces'))
+                                  stdout=sock_f, cwd=os.path.join(swd, '../bpftraces'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
 
@@ -337,7 +337,7 @@ def start_sock_instrument(interface):
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
         sock_p = subprocess.Popen(["./sock.bt"],
-                                  stdout=sock_f, cwd=os.path.join(iwd, '../bpftraces'))
+                                  stdout=sock_f, cwd=os.path.join(swd, '../bpftraces'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
 
@@ -348,7 +348,7 @@ def end_instruments(instrument_files, instruments_procs):
         proc.kill()
 
     with open(f'cpu.{experiment}.out', 'w') as cpu_output:
-        subprocess.Popen(["./cpu.py", instrument_files[0].name], stdout=cpu_output, cwd=iwd).communicate()
+        subprocess.Popen(["./cpu.py", instrument_files[0].name], stdout=cpu_output, cwd=swd).communicate()
 
 def get_k8s_nodes():
     first = ['kubectl', 'get', 'nodes']
@@ -475,7 +475,7 @@ def run_neper_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, \
                       "-l", str(duration), "--source-port", str(cport), "-P", str(port)]
         f = open(f'neper.h{i}.{experiment}.out', 'w+b')
-        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd=iwd)
+        p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd=swd)
         
         processes.append((p, f, False))
         hflow = FlowStat()

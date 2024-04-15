@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-import croffset
+from scripts import croffset
 import plot
 import argparse
 import os
@@ -177,9 +177,9 @@ if __name__ == "__main__":
     global args
     args = argparser.parse_args()
 
-    global iwd
-    iwd = os.getcwd()
-    os.chdir(os.path.join(iwd, args.path, args.experiment))
+    global swd
+    swd = os.path.join(os.getcwd(), 'scripts')
+    os.chdir(os.path.join(swd, args.path, args.experiment))
 
     configs = identify_configs(args.experiment)
     if configs == None:
