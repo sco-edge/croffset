@@ -8,6 +8,7 @@ iperfs/rust-iperf/target/
 *.log
 *.out
 scripts/*.png
+plot/*/*.png
 **/__pycache__/
 .vscode/
 memo.md
