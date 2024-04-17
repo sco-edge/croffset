@@ -14,3 +14,4 @@ plot/*/*.png
 .vscode/
 memo.md
 dataset/
+test.py
