@@ -10,6 +10,8 @@ iperfs/rust-iperf/target/
 *.out
 scripts/*.png
 plot/*/*.png
+plot/*/*.eps
+plot/*/*.svg
 **/__pycache__/
 .vscode/
 memo.md
