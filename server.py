@@ -298,12 +298,18 @@ def start_instruments(interface):
 
     # xdp
     with open(f'xdp.{experiment}.out', 'w') as brtt_f:
+        # if int(args.container) > 0:
+        #     brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
+        #                               stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
+        # else:
+        #     brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
+        #                               stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
         if int(args.container) > 0:
-            brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
-                                      stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
+            brtt_p = subprocess.Popen(["./tcxdp", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
+                                      stdout=brtt_f, cwd=os.path.join(swd, '../tcxdp'))
         else:
-            brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
-                                      stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
+            brtt_p = subprocess.Popen(["./tcxdp", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
+                                      stdout=brtt_f, cwd=os.path.join(swd, '../tcxdp'))
     instrument_files.append(brtt_f)
     instrument_procs.append(brtt_p)
 
@@ -327,6 +333,13 @@ def start_instruments(interface):
                                   stdout=sock_f, cwd=os.path.join(swd, '../bpftraces'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
+
+    # write_xmit
+    with open(f'write.{experiment}.out', 'w') as write_f:
+        write_p = subprocess.Popen(["./write_xmit.bt"],
+                                  stdout=write_f, cwd=os.path.join(swd, '../bpftraces'))
+    instrument_files.append(write_f)
+    instrument_procs.append(write_p)
 
     return (instrument_files, instrument_procs)
 
@@ -402,7 +415,7 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
     # Host flows
     for i in range(0, num_hflows):
         port = 5200 + i
-        cport = 42000 + i
+        cport = 45000 + i
         cpu = 16 + i
         iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), \
                       "-t", str(duration), "-J", "-A", str(cpu)]
@@ -417,11 +430,14 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
     # Container flows
     for i in range(0, num_cflows):
         port = 5200 + i
-        cport = 42000 + i
+        cport = 45000 + i
         cpu = 16 + i
         iperf_args = ["kubectl", "exec", client_pods[i][0], "--", \
                       "iperf3", "-c", server_pods[i][1], "-p", str(port), "--cport", str(cport), \
                       "-t", str(duration), "-J", "-A", str(cpu)]
+        # iperf_args = ["kubectl", "exec", client_pods[i][0], "--", \
+        #               "iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), \
+        #               "-t", str(duration), "-J", "-A", str(cpu)]
         f = open(f'iperf.c{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE)
 
@@ -470,7 +486,7 @@ def run_neper_clients(num_hflows, num_cflows, duration, server_addr, server_pods
     # Host flows
     for i in range(0, num_hflows):
         port = 5300 + i
-        cport = 42000 + i
+        cport = 45000 + i
         cpu = 16 + i
         neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, \
                       "-l", str(duration), "--source-port", str(cport), "-P", str(port)]
@@ -489,7 +505,7 @@ def run_neper_clients(num_hflows, num_cflows, duration, server_addr, server_pods
     # Container flows
     for i in range(0, num_cflows):
         port = 5300 + i
-        cport = 42000 + i
+        cport = 45000 + i
         cpu = 16 + i
         neper_args = ["kubectl", "exec", client_pods[i][0], "--", "numactl", "-C", str(cpu), \
                       "./tcp_rr", "--nolog", "-c", "-H", server_pods[i][1], "-l", str(duration), \
