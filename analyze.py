@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 from scripts import croffset
-import plot
+from scripts import plot
 import argparse
 import os
 import json
@@ -26,7 +26,7 @@ class Config:
 
         self.saddr = "192.168.2.102"
         self.daddr = "192.168.2.103"
-        self.first_sport= 42000
+        self.first_sport= 45000
         self.first_dport = 5300 if self.app == "neper" else 5200
 
 def identify_configs(experiment):
@@ -93,7 +93,7 @@ def analyze_traces(num_flows, is_container):
             print(f"construct_rtts() at {flow_id} failed.")
             exit(-1)
 
-        sr_count = flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out", False)
+        (sr_count, comp_count, altcomp_count) = flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out", False)
 
         # Writing to the summary.json
         summary_json = f"summary.{args.experiment}.json"
@@ -119,6 +119,8 @@ def analyze_traces(num_flows, is_container):
         data[flow_id]["fq_std"] = fq[1]
 
         data[flow_id]["sr_count"] = sr_count
+        data[flow_id]["comp_count"] = comp_count
+        data[flow_id]["altcomp_count"] = altcomp_count
 
         with open(summary_json, 'w') as file:
             json.dump(data, file, indent=4)
@@ -140,7 +142,7 @@ def analyze_sock_trace_only(num_flows, is_container):
             print(f"parse_sock_trace() at {flow_id} failed.")
             exit(-1)
 
-        sr_count = flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out", True)
+        (sr_count, comp_count, altcomp_count) = flow.analyze_spurious_retrans(f"sr.{flow_id}.{args.experiment}.out", True)
 
         # Writing to the summary.json
         summary_json = f"summary.{args.experiment}.json"
@@ -152,12 +154,29 @@ def analyze_sock_trace_only(num_flows, is_container):
             continue
 
         data[flow_id]["sr_count"] = sr_count
+        data[flow_id]["comp_count"] = comp_count
+        data[flow_id]["altcomp_count"] = altcomp_count
 
         with open(summary_json, 'w') as file:
             json.dump(data, file, indent=4)
 
         flows.append(flow)
     
+    return flows
+
+def parse_rtts(num_flows, is_container):
+    flows = []
+    protocol = "UDP" if is_container else "TCP"
+
+    for i in range(0, num_flows):
+        flow_id = f"c{i}" if is_container else f"h{i}"
+        flow = croffset.Flow(protocol, configs.saddr, configs.first_sport + i,
+                              configs.daddr, configs.first_dport + i, configs.app)
+
+        if not flow.parse_rtt_trace(f"rtt.{flow_id}.{args.experiment}.out"):
+            print(f"parse_xdp_trace() at {flow_id} failed.")
+            return None
+
     return flows
 
 def plot_traces(flows, is_container):
@@ -170,16 +189,17 @@ if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument('experiment')
     argparser.add_argument('--cca', default="bbr")
-    argparser.add_argument('--plot', '-p', action='store_true')
-    argparser.add_argument('--sock-only', action='store_true')
-    argparser.add_argument('--path', default="../output")
+    argparser.add_argument('--plot', '-p', action="store_true")
+    argparser.add_argument('--sock-only', action="store_true")
+    argparser.add_argument('--path', default="output")
+    argparser.add_argument('--reset-rtt', action="store_true")
+    argparser.add_argument('--post-analysis', action="store_true")
 
     global args
     args = argparser.parse_args()
 
     global swd
-    swd = os.path.join(os.getcwd(), 'scripts')
-    os.chdir(os.path.join(swd, args.path, args.experiment))
+    os.chdir(os.path.join(os.getcwd(), args.path, args.experiment))
 
     configs = identify_configs(args.experiment)
     if configs == None:
@@ -192,8 +212,12 @@ if __name__ == "__main__":
         exit()
 
     # Main logic
-    hflows = analyze_traces(configs.host, False)
-    cflows = analyze_traces(configs.container, True)
+    if args.reset_rtt:
+        hflows = analyze_traces(configs.host, False)
+        cflows = analyze_traces(configs.container, True)
+    else:
+        hflows = parse_rtts(configs.host, False)
+        cflows = parse_rtts(configs.container, True)
 
     # Plotting
     if args.plot == True:
