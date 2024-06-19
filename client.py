@@ -68,6 +68,11 @@ def start_system_measurements():
     subprocess.run(["cat", "/proc/softirqs"], stdout=softirqs_f)
     measurements_starts.append(softirqs_f)
 
+    # netstat
+    netstat_f = tempfile.NamedTemporaryFile()
+    subprocess.run(["cat", "/proc/net/netstat"], stdout=netstat_f)
+    measurements_starts.append(netstat_f)
+
     return measurements_starts
 
 def end_system_measurements(measurements_starts):
@@ -84,6 +89,12 @@ def end_system_measurements(measurements_starts):
     with open(f'softirqs.{experiment}.out', 'w') as softirqs_output:
         subprocess.Popen(["./softirqs.py", measurements_starts[1].name, end_softirqs_f.name],
                          stdout=softirqs_output, cwd=swd).communicate()
+    # netstat
+    end_netstat_f = tempfile.NamedTemporaryFile()
+    subprocess.run(["cat", "/proc/net/netstat"], stdout=end_netstat_f)
+    with open(f'netstat.{experiment}.out', 'w') as netstat_output:
+        subprocess.Popen(["./netstat.py", measurements_starts[2].name, end_netstat_f.name],
+                         stdout=netstat_output, cwd=swd).communicate()
 
 def start_instruments():
     instrument_files = []
