@@ -216,7 +216,7 @@ def main():
         exit(-1)
 
     if not args.no_instrument:
-        measurement_starts = start_system_measurements()
+        (h_meas_starts, cs_meas_starts, cc_meas_starts) = start_system_measurements(int(args.container), server_pods, client_pods)
         (instrument_files, instrument_procs) = start_instruments(interface)
     
     # sock trace only for checking spurious retransmissions
@@ -233,7 +233,7 @@ def main():
                                              duration, server_addr, server_pods, client_pods)
 
     if not args.no_instrument:
-        end_system_measurements(measurement_starts)
+        end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, int(args.container), server_pods, client_pods)
         end_instruments(instrument_files, instrument_procs)
 
     # sock trace only for checking spurious retransmissions
@@ -256,46 +256,124 @@ def initialize_nic():
     subprocess.Popen(["./flow_direction_tx_tcp.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
     subprocess.Popen(["./smp_affinity.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
 
-def start_system_measurements():
-    measurements_starts = []
-
+def start_system_measurements(num_cflows, server_pods, client_pods):
     # interrupts
     interrupts_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/interrupts"], stdout=interrupts_f)
-    measurements_starts.append(interrupts_f)
 
     # softirqs
     softirqs_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/softirqs"], stdout=softirqs_f)
-    measurements_starts.append(softirqs_f)
 
     # netstat
     netstat_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/net/netstat"], stdout=netstat_f)
-    measurements_starts.append(netstat_f)
 
-    return measurements_starts
+    h_meas_starts = (interrupts_f, softirqs_f, netstat_f)
 
-def end_system_measurements(measurements_starts):
+    # containers
+    cs_meas_starts = []
+    cc_meas_starts = []
+    for i in range(0, num_cflows):
+        # server
+        cs_interrupts_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+                    "cat", "/proc/interrupts"], stdout=cs_interrupts_f)
+        
+        cs_softirqs_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+                    "cat", "/proc/softirqs"], stdout=cs_softirqs_f)
+
+        cs_netstat_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+                    "cat", "/proc/net/netstat"], stdout=cs_netstat_f)
+        
+        cs_meas_starts.append((cs_interrupts_f, cs_softirqs_f, cs_netstat_f))
+
+        # client
+        cc_interrupts_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
+                    "cat", "/proc/interrupts"], stdout=cc_interrupts_f)
+        
+        cc_softirqs_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
+                    "cat", "/proc/softirqs"], stdout=cc_softirqs_f)
+        
+        cc_netstat_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
+                    "cat", "/proc/net/netstat"], stdout=cc_netstat_f)
+        
+        cc_meas_starts.append((cc_interrupts_f, cc_softirqs_f, cc_netstat_f))
+
+    return (h_meas_starts, cs_meas_starts, cc_meas_starts)
+
+def end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_cflows, server_pods, client_pods):
     # interrupts
     end_interrupts_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/interrupts"], stdout=end_interrupts_f)
-    with open(f'interrupts.{experiment}.out', 'w') as interrupts_output:
-        subprocess.Popen(["./interrupts.py", measurements_starts[0].name, end_interrupts_f.name],
+    with open(f'interrupts.h.{experiment}.out', 'w') as interrupts_output:
+        subprocess.Popen(["./interrupts.py", h_meas_starts[0].name, end_interrupts_f.name],
                          stdout=interrupts_output, cwd=swd).communicate()
 
     # softirqs
     end_softirqs_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/softirqs"], stdout=end_softirqs_f)
-    with open(f'softirqs.{experiment}.out', 'w') as softirqs_output:
-        subprocess.Popen(["./softirqs.py", measurements_starts[1].name, end_softirqs_f.name],
+    with open(f'softirqs.h.{experiment}.out', 'w') as softirqs_output:
+        subprocess.Popen(["./softirqs.py", h_meas_starts[1].name, end_softirqs_f.name],
                          stdout=softirqs_output, cwd=swd).communicate()
+    
     # netstat
     end_netstat_f = tempfile.NamedTemporaryFile()
     subprocess.run(["cat", "/proc/net/netstat"], stdout=end_netstat_f)
-    with open(f'netstat.{experiment}.out', 'w') as netstat_output:
-        subprocess.Popen(["./netstat.py", measurements_starts[2].name, end_netstat_f.name],
+    with open(f'netstat.h.{experiment}.out', 'w') as netstat_output:
+        subprocess.Popen(["./netstat.py", h_meas_starts[2].name, end_netstat_f.name],
                          stdout=netstat_output, cwd=swd).communicate()
+        
+    # container
+    for i in range(0, num_cflows):
+        # server
+        end_cs_interrupts_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+                    "cat", "/proc/interrupts"], stdout=end_cs_interrupts_f)
+        with open(f'interrupts.cs{i}.{experiment}.out', 'w') as cs_interrupts_output:
+            subprocess.Popen(["./interrupts.py", cs_meas_starts[i][0].name, end_cs_interrupts_f.name],
+                            stdout=cs_interrupts_output, cwd=swd).communicate()
+            
+        end_cs_softirqs_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+                    "cat", "/proc/softirqs"], stdout=end_cs_softirqs_f)
+        with open(f'softirqs.cs{i}.{experiment}.out', 'w') as cs_softirqs_output:
+            subprocess.Popen(["./softirqs.py", cs_meas_starts[i][1].name, end_cs_softirqs_f.name],
+                            stdout=cs_softirqs_output, cwd=swd).communicate()
+            
+        end_cs_netstat_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+                    "cat", "/proc/net/netstat"], stdout=end_cs_netstat_f)
+        with open(f'netstat.cs{i}.{experiment}.out', 'w') as cs_netstat_output:
+            subprocess.Popen(["./netstat.py", cs_meas_starts[i][2].name, end_cs_netstat_f.name],
+                            stdout=cs_netstat_output, cwd=swd).communicate()
+        
+        # client
+        end_cc_interrupts_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
+                    "cat", "/proc/interrupts"], stdout=end_cc_interrupts_f)
+        with open(f'interrupts.cc{i}.{experiment}.out', 'w') as cc_interrupts_output:
+            subprocess.Popen(["./interrupts.py", cc_meas_starts[i][0].name, end_cc_interrupts_f.name],
+                            stdout=cc_interrupts_output, cwd=swd).communicate()
+            
+        end_cc_softirqs_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
+                    "cat", "/proc/softirqs"], stdout=end_cc_softirqs_f)
+        with open(f'softirqs.cc{i}.{experiment}.out', 'w') as cc_softirqs_output:
+            subprocess.Popen(["./softirqs.py", cc_meas_starts[i][1].name, end_cc_softirqs_f.name],
+                            stdout=cc_softirqs_output, cwd=swd).communicate()
+            
+        end_cc_netstat_f = tempfile.NamedTemporaryFile()
+        subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
+                    "cat", "/proc/net/netstat"], stdout=end_cc_netstat_f)
+        with open(f'netstat.cc{i}.{experiment}.out', 'w') as cc_netstat_output:
+            subprocess.Popen(["./netstat.py", cc_meas_starts[i][2].name, end_cc_netstat_f.name],
+                            stdout=cc_netstat_output, cwd=swd).communicate()
 
 def start_instruments(interface):
     instrument_files = []
