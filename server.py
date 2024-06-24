@@ -3,6 +3,7 @@ import subprocess
 import tempfile
 import json
 import os
+import sys
 import numpy as np
 import time
 import argparse
@@ -216,7 +217,9 @@ def main():
         exit(-1)
 
     if not args.no_instrument:
-        (h_meas_starts, cs_meas_starts, cc_meas_starts) = start_system_measurements(int(args.container), server_pods, client_pods)
+        # For remote instrument, at least 1 containers are used
+        num_container_instrument = int(args.container) if int(args.container) > 0 else 1
+        (h_meas_starts, cs_meas_starts, cc_meas_starts) = start_system_measurements(num_container_instrument, server_pods, client_pods)
         (instrument_files, instrument_procs) = start_instruments(interface)
     
     # sock trace only for checking spurious retransmissions
@@ -225,15 +228,21 @@ def main():
         
     time.sleep(4)
 
-    if args.app == "neper":
-        (hflows, cflows) = run_neper_clients(int(args.host), int(args.container),
-                                             duration, server_addr, server_pods, client_pods)
+    if args.instrument_only:
+        print(f"{experiment}. Press \'Enter\' to end the recording.")
+        _ = sys.stdin.readline()
     else:
-        (hflows, cflows) = run_iperf_clients(int(args.host), int(args.container),
-                                             duration, server_addr, server_pods, client_pods)
+        if args.app == "neper":
+            (hflows, cflows) = run_neper_clients(int(args.host), int(args.container),
+                                                duration, server_addr, server_pods, client_pods)
+        else:
+            (hflows, cflows) = run_iperf_clients(int(args.host), int(args.container),
+                                                duration, server_addr, server_pods, client_pods)
 
     if not args.no_instrument:
-        end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, int(args.container), server_pods, client_pods)
+        # For remote instrument, at least 1 containers are used
+        num_container_instrument = int(args.container) if int(args.container) > 0 else 1
+        end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_container_instrument, server_pods, client_pods)
         end_instruments(instrument_files, instrument_procs)
 
     # sock trace only for checking spurious retransmissions
@@ -241,11 +250,12 @@ def main():
         for proc in instrument_procs:
             proc.kill()
 
-    if len(hflows) != int(args.host) or len(cflows) != int(args.container):
-        print(f'Inconsistent # flow. hflows={len(hflows)}, cflows={len(cflows)}')
-        exit(-1)
+    if not args.instrument_only:
+        if len(hflows) != int(args.host) or len(cflows) != int(args.container):
+            print(f'Inconsistent # flow. hflows={len(hflows)}, cflows={len(cflows)}')
+            exit(-1)
 
-    summarize_statistics(hflows, cflows)
+        summarize_statistics(hflows, cflows)
     
 def initialize_nic():
     logging.info("Initialize ice driver.")
@@ -669,6 +679,7 @@ if __name__ == "__main__":
     parser.add_argument('--loss-detection', default='rack-tlp')
     parser.add_argument('--no-instrument', action='store_true')
     parser.add_argument('--sock-only', action='store_true')
+    parser.add_argument('--instrument-only', action='store_true')
 
     global args
     args = parser.parse_args()
