@@ -22,13 +22,16 @@ class MeasuredRTT:
     tc_fq = None
     fq = None
 
-    def __init__(self, mark, rack_send, rack_recv, xdp_ingress, fq_enqueue, fq_dequeue):
+    rack_is_invalid = None
+
+    def __init__(self, mark, rack_send, rack_recv, xdp_ingress, fq_enqueue, fq_dequeue, rack_is_invalid):
         self.mark = mark
         self.rack_send = rack_send
         self.rack_recv = rack_recv
         self.xdp_ingress = xdp_ingress
         self.fq_enqueue = fq_enqueue
         self.fq_dequeue = fq_dequeue
+        self.rack_is_invalid = rack_is_invalid
 
         self.trtt = (rack_recv - rack_send) / 1000
         self.brtt = (xdp_ingress - fq_dequeue) / 1000
@@ -90,8 +93,9 @@ class LossEvent:
     waiting = None
     seg_left = None
     seg_right = None
+    skb_mstamp = None
 
-    def __init__(self, ts, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd, waiting):
+    def __init__(self, ts, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd, waiting, skb_mstamp):
         self.ts = ts
         self.skb = skb
         self.gso_segs = gso_segs
@@ -99,6 +103,7 @@ class LossEvent:
         self.rack_rtt_us = rack_rtt_us
         self.reo_wnd = reo_wnd
         self.waiting = waiting
+        self.skb_mstamp = skb_mstamp
 
 class IperfStat:
     throughput = None
@@ -119,6 +124,7 @@ class Flow:
     
     init_ts = None   # Initial timestamp
     xdps_map = None     # Raw timestamps for xdp
+    tcs_map = None      # Raw timestamps for tc
     racks_map = None    # Raw timestamps for rack
     fqs_map = None      # Raw timestamps for fq
     rtts = None       # Measured RTTs
@@ -137,6 +143,7 @@ class Flow:
         self.dport = dport
 
         self.xdps_map = {}
+        self.tcs_map = {}
         self.racks_map = {}
         self.fqs_map = {}
         self.rtts = []
@@ -149,21 +156,24 @@ class Flow:
             print(f"flow init error: {app}")
 
     def parse_xdp_trace(self, file):
-        expr = re.compile(r"^(\d+?) (.+?)$")
         with open(file, 'r') as lines:
             lines.seek(0)
             for l in lines:
-                match = expr.search(l)
-                if match == None:
-                    continue
-                
-                ts = int(match.group(1))
-                mark = padded_hex(int(match.group(2), 16), 8)
-
-                if not mark in self.xdps_map:
-                    self.xdps_map[mark] = [ts]
-                else:
-                    self.xdps_map[mark].append(ts)
+                tokens = l.rstrip().split()
+                if len(tokens) == 2 and not tokens[1].startswith("t") and len(tokens[1]) > 2:
+                    ts = int(tokens[0])
+                    mark = padded_hex(int(tokens[1], 16), 8)
+                    if not mark in self.xdps_map:
+                        self.xdps_map[mark] = [ts]
+                    else:
+                        self.xdps_map[mark].append(ts)
+                elif len(tokens) == 3:
+                    ts = int(tokens[0])
+                    xmit = int(tokens[2])
+                    if not xmit in self.tcs_map:
+                        self.tcs_map[xmit] = [ts]
+                    else:
+                        self.tcs_map[xmit].append(ts)
 
         return len(self.xdps_map)
 
@@ -200,24 +210,27 @@ class Flow:
                     xmit_time = int(tokens[8]) * 1000
                     tcp_mstamp = int(tokens[9]) * 1000
                     sacked = int(tokens[10])
+                    is_invalid = False
 
                     # tcp_rack_advance() logic
                     # if rtt_us < tcp_min_rtt_us and (sacked & int("0x02", 16) + int("0x80", 16) + int("0x10", 16)):
-                    #     continue
+                    if sacked & int("0x02", 16) + int("0x80", 16) + int("0x10", 16):
+                        is_invalid = True
 
                     # init_ts is initialized here
                     if not self.init_ts:
                         self.init_ts = xmit_time
 
                     if not mark in self.racks_map:
-                        self.racks_map[mark] = [(ts, xmit_time, tcp_mstamp)]
+                        self.racks_map[mark] = [(ts, xmit_time, tcp_mstamp, is_invalid)]
                     else:
-                        self.racks_map[mark].append((ts, xmit_time, tcp_mstamp))
+                        self.racks_map[mark].append((ts, xmit_time, tcp_mstamp, is_invalid))
 
         return len(self.racks_map)
     
     def parse_fq_trace(self, file):
         queued = {}
+        print(f"self.sk: {self.sk}")
         with open(file, 'r') as lines:
             lines.seek(0)
             for l in lines:
@@ -228,8 +241,12 @@ class Flow:
                 # FQ enqueue events
                 if tokens[1] == "fq_enqueue()":
                     sk = padded_hex(int(tokens[2], 16), 16)
-                    if sk != self.sk:
-                        continue
+
+                    # 2024-06-23 For container-host flows, we cannot track the sk in fqs,
+                    # so we ignore the sk and track all fq samples.
+                    # Same in FQ dequeue events
+                    # if sk != self.sk:
+                    #     continue
 
                     ts = int(tokens[0])
                     skb = padded_hex(int(tokens[3], 16), 16)
@@ -240,8 +257,8 @@ class Flow:
                 # FQ dequeue events
                 if tokens[1] == "fq_dequeue()":
                     sk = padded_hex(int(tokens[2], 16), 16)
-                    if sk != self.sk:
-                        continue
+                    # if sk != self.sk:
+                    #     continue
 
                     ts = int(tokens[0])
                     skb = padded_hex(int(tokens[3], 16), 16)
@@ -300,7 +317,7 @@ class Flow:
 
         self.losses = np.array([(i[0], i[1]) for i in loss_points])
         self.retrans = np.array([(i[0], i[1]) for i in retrans_points])
-        self.delivered = np.array([(i[0], i[1]) for i in delivered_points])
+        self.delivered = np.array([(i[0], i[1], i[2]) for i in delivered_points])
         self.sretrans = np.array([(i[0], i[1]) for i in sr_points])
         self.dsacks = np.array([(i[0], i[1]) for i in dsack_points])
     
@@ -313,11 +330,11 @@ class Flow:
                 continue
 
             racks = self.racks_map.get(mark)
-            for (rack_ts, rack_send, rack_recv) in racks:
+            for (rack_ts, rack_send, rack_recv, is_invalid) in racks:
                 rack_send_us = int(rack_send / 1_000)
 
                 xdp_ts = min((el for el in self.xdps_map[mark] if el <= rack_recv),
-                                key=lambda x: rack_recv - x)
+                             key=lambda x: rack_recv - x)
 
                 # To address bpf_get_prandom_u32() conflicts
                 # If the difference between brtt and trtt timestamps >= 1 ms
@@ -329,7 +346,7 @@ class Flow:
 
                 (fq_enqueue, fq_dequeue) = min(self.fqs_map[rack_send_us], key=lambda x: x)
                 try:
-                    rtt = MeasuredRTT(mark, rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue)
+                    rtt = MeasuredRTT(mark, rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue, is_invalid)
                     # print(rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue)
                     self.rtts.append(rtt)
                 except ValueError:
@@ -338,7 +355,8 @@ class Flow:
         self.rtts = sorted(self.rtts, key=lambda x: x.rack_recv)
         with open(output, 'w') as rtt_file:
             for rtt in self.rtts:
-                line = f"{rtt.rack_recv} {rtt.rack_recv - self.init_ts:>11.0f} {rtt.mark}   " +  \
+                is_invalid = "I" if rtt.rack_is_invalid else "."
+                line = f"{rtt.rack_recv} {rtt.rack_recv - self.init_ts:>11.0f} {rtt.mark} {is_invalid} " +  \
                        f"{rtt.trtt:>8.3f} {rtt.brtt:>8.3f} {rtt.offset:>8.3f}   " + \
                        f"{rtt.rack_send:>11.0f} {rtt.fq_dequeue:>11.0f} {rtt.offset_send:>8.3f}   " + \
                        f"{rtt.xdp_ingress:>11.0f} {rtt.rack_recv:>11.0f} {rtt.offset_recv:>8.3f}   " + \
@@ -408,9 +426,10 @@ class Flow:
             lost_bytes = int(tokens[9])
             rack_rtt_us = int(tokens[10])
             eighth_srtt = int(tokens[11])
+            skb_mstamp = int(tokens[12])
             
             loss_points.append((ts,
-                LossEvent(ts, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd_used, waiting)))
+                LossEvent(ts, skb, gso_segs, lost_bytes, rack_rtt_us, reo_wnd_used, waiting, skb_mstamp)))
             return reo_wnd_used
 
     def parse_tcp_retransmit_skb(self, tokens, retrans_points, is_valid):
@@ -477,8 +496,9 @@ class Flow:
         skb = padded_hex(int(tokens[3], 16), 16)
         left = padded_hex(int(tokens[4], 16), 8)
         right = padded_hex(int(tokens[5], 16), 8)
-        delivered_points.append((ts, Segment(left, right)))
-        return        
+        sent = int(tokens[8])
+        delivered_points.append((ts, Segment(left, right), sent))
+        return
 
     def analyze_spurious_retrans(self, output, count_only):
         # skb is not an unique identifier.
@@ -558,7 +578,7 @@ class Flow:
                         break
 
         # for (loss_ts, loss) in self.losses:
-        #     print(f"Loss. {loss_ts + self.init_ts:<14} {loss_ts / 1_000_000_000:<11}",
+        #     print(f"Loss. {loss_ts:<14}",
         #           f"{loss.skb} {loss.gso_segs} {loss.lost_bytes} {loss.rack_rtt_us}",
         #           f"{loss.reo_wnd} {loss.waiting} {loss.seg_left} {loss.seg_right} {loss}")
 
@@ -577,23 +597,23 @@ class Flow:
                     found_loss_ts = loss_ts
                     break
             sr_bytes = int(segment.right, 16) - int(segment.left, 16)
-            if found_loss != None:
-                # print(f"Srtx. {sr_ts + self.init_ts:<14} {sr_ts / 1_000_000_000:<11}",
+            if found_loss:
+                # print(f"Srtx. {sr_ts:<14}",
                 #       f"{segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}",
                 #       f"{found_loss.skb} {found_loss.rack_rtt_us} {found_loss.reo_wnd}",
                 #       f"{found_loss.waiting} {int((sr_ts - found_loss_ts) / 1_000)}")
                 
                 if found_loss.seg_left != None and found_loss.seg_right != None:
-                    for (delivered_ts, delivered) in self.delivered:
+                    for (delivered_ts, delivered, delivered_sent) in self.delivered:
                         if delivered.seglen == 0:
                             continue
                         intersection = intersection_segs(delivered.left, delivered.right, segment.left, segment.right)
                         if intersection is None:
                             continue
                         if not (intersection[0], intersection[1]) in post_sr:
-                            post_sr[(intersection[0], intersection[1])] = (delivered_ts, found_loss)
+                            post_sr[(intersection[0], intersection[1])] = (delivered_ts, found_loss, delivered_sent)
             # else:
-            #     print(f"Srtx. {sr_ts + self.init_ts:<14} {sr_ts / 1_000_000_000:<11}",
+            #     print(f"Srtx. {sr_ts:<14}",
             #           f"{segment.left} {segment.right} {sr_bytes:>5} {int(sr_bytes / mss):>2}")
 
         # print("")
@@ -607,32 +627,100 @@ class Flow:
             for key in post_sr:
                 segment = Segment(key[0], key[1])
                 count += segment.seglen
-            return count
+            return (count, -1, -1)
         
         with open(output, "w") as sr_file:
             count = 0
+            compensated_count = 0
+            alter_compensated_count = 0
             for key in post_sr:
                 segment = Segment(key[0], key[1])
                 count += segment.seglen
-                (delivered_ts, found_loss) = post_sr[key]
-                lateness = (delivered_ts - found_loss.ts - found_loss.reo_wnd) / 1_000
-                lateness = found_loss.waiting + lateness - (found_loss.rack_rtt_us + found_loss.reo_wnd)
-                (rtt_before, rtt_after) = self.relevant_rtt(found_loss.ts)
-                # offset_diff = 
-                # line = f"{found_loss.ts:15.0f} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} {diff:9.3f}   " + \
-                #     f"{lateness:9.3f} " + \
-                #     f"{rtt_before.rack_recv:15.0f} {abs(found_loss.ts - rtt_before.rack_recv) / 1_000 :8.3f} {rtt_before.offset:9.3f} {rtt_before.offset_send:9.3f} {rtt_before.offset_recv:9.3f} " + \
-                #     f"{rtt_after.rack_recv:15.0f} {abs(rtt_after.rack_recv - found_loss.ts) / 1_000 :8.3f} {rtt_after.offset:9.3f} {rtt_after.offset_send:9.3f} {rtt_after.offset_recv:9.3f}\n"
-                line = f"{found_loss.ts} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} " + \
-                       f"{delivered_ts:15.0f}\n"
+                (delivered_ts, found_loss, delivered_sent) = post_sr[key]
+                # lateness = (delivered_ts - found_loss.ts - found_loss.reo_wnd) / 1_000
+                # lateness = found_loss.waiting + lateness - (found_loss.rack_rtt_us + found_loss.reo_wnd)
+                (m_rtt, _) = self.relevant_rtt(found_loss.ts)
+                (i_rtt, _) = self.relevant_rtt(delivered_ts)
+                
+                # delivered_sent_us = int(delivered_sent / 1_000)
+                # if delivered_sent_us in self.fqs_map:
+                skb_mstamp_us = int(found_loss.skb_mstamp / 1_000)
+                if skb_mstamp_us in self.fqs_map:
+                    (fq_enqueue, fq_dequeue) = min(self.fqs_map[skb_mstamp_us], key=lambda x: x)
+                    L_tau = (delivered_ts - found_loss.skb_mstamp) / 1_000 - found_loss.rack_rtt_us - found_loss.reo_wnd
+                    compensation = i_rtt.offset_recv + (fq_dequeue - found_loss.skb_mstamp) / 1_000 - m_rtt.offset_recv - m_rtt.offset_send
+                    compensation_alternative = (fq_dequeue - found_loss.skb_mstamp) / 1_000 - m_rtt.offset_send
+                    line = f"{found_loss.ts} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} " + \
+                           f"{delivered_ts} {found_loss.skb_mstamp} {m_rtt.rack_recv} {m_rtt.rack_send} " + \
+                           f"{(delivered_ts - found_loss.skb_mstamp) / 1_000 :>8.3f} {(m_rtt.rack_recv - m_rtt.rack_send) / 1_000 :>8.3f} " + \
+                           f"{i_rtt.offset_recv:>8.3f} {(fq_dequeue - found_loss.skb_mstamp) / 1_000:>8.3f} {m_rtt.offset_recv:>8.3f} {m_rtt.offset_send:>8.3f} " \
+                           f"{L_tau:>8.3f} {L_tau - compensation:>8.3f} {L_tau - compensation_alternative:>8.3f}\n"
+                    if L_tau >= 0 and L_tau - compensation < 0:
+                        compensated_count += segment.seglen
+                    if L_tau >= 0 and L_tau - compensation_alternative < 0:
+                        alter_compensated_count += segment.seglen
+                elif found_loss.skb_mstamp in self.tcs_map:
+                    egress = min(self.tcs_map[found_loss.skb_mstamp], key=lambda x: x)
+                    L_tau = (delivered_ts - found_loss.skb_mstamp) / 1_000 - found_loss.rack_rtt_us - found_loss.reo_wnd
+                    compensation = i_rtt.offset_recv + (egress - found_loss.skb_mstamp) / 1_000 - m_rtt.offset_recv - m_rtt.offset_send
+                    compensation_alternative = (egress - found_loss.skb_mstamp) / 1_000 - m_rtt.offset_send
+                    line = f"{found_loss.ts} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} " + \
+                           f"{delivered_ts} {found_loss.skb_mstamp} {m_rtt.rack_recv} {m_rtt.rack_send} " + \
+                           f"{(delivered_ts - found_loss.skb_mstamp) / 1_000 :>8.3f} {(m_rtt.rack_recv - m_rtt.rack_send) / 1_000 :>8.3f} " + \
+                           f"{i_rtt.offset_recv:>8.3f} {(egress - found_loss.skb_mstamp) / 1_000:>8.3f} {m_rtt.offset_recv:>8.3f} {m_rtt.offset_send:>8.3f} " \
+                           f"{L_tau:>8.3f} {L_tau - compensation:>8.3f} {L_tau - compensation_alternative:>8.3f}\n"
+                    if L_tau >= 0 and L_tau - compensation < 0:
+                        compensated_count += segment.seglen
+                    if L_tau >= 0 and L_tau - compensation_alternative < 0:
+                        alter_compensated_count += segment.seglen
+                else:
+                    line = f"{found_loss.ts} {segment.seglen:2} {found_loss.rack_rtt_us:4} {found_loss.reo_wnd:3} {found_loss.waiting:4} " + \
+                           f"{delivered_ts} {found_loss.skb_mstamp} {m_rtt.rack_recv} {m_rtt.rack_send} " + \
+                           f"{i_rtt.offset_recv:>8.3f}     N/A {m_rtt.offset_recv:>8.3f} {m_rtt.offset_send:>8.3f} \n"
                 sr_file.write(line)
+
+                #   tau_a(i) = delivered_ts,        tau_s(i) = found_loss.skb_mstamp
+                #   tau_a(m) = m_rtt.rack_send,     tau_s(m) = m_rtt.rack_recv
+                # theta_r(i) = i_rtt.offset_recv, theta_s(i) = fq_dequeue - found_loss.skb_mstamp
+                # theta_r(m) = m_rtt.offset_recv, theta_s(m) = m_rtt.offset_send
+                #
+                # L_tau  = tau_a(i) - tau_s(i) - tau_a(m) + tau_s(m) - rho(m)
+                # L_beta = L_tau - theta_r(i) - theta_s(i) + theta_r(m) + theta_s(m)
+                # If L_tau > = and L_beta <= 0, this spurious retransmissions would not happen if the offset is compensated
         
-        return count
+        return (count, compensated_count, alter_compensated_count)
+    
+    def parse_rtt_trace(self, file):
+        last_rack_send = None
+        with open(file, 'r') as lines:
+            lines.seek(0)
+            for l in lines:
+                tokens = l.rstrip().split()
+                if len(tokens) < 2:
+                    continue
+                
+                # rack_recv = tokens[0]
+                # mark = tokens[2]
+
+                if float(tokens[5]) < 0:
+                    print("-", l, end="")
+
+                if last_rack_send and int(tokens[7]) < last_rack_send:
+                    print("+", l, end="")
+                last_rack_send = int(tokens[7])
+
+                # line = f"{rtt.rack_recv} {rtt.rack_recv - self.init_ts:>11.0f} {rtt.mark}   " +  \
+                #        f"{rtt.trtt:>8.3f} {rtt.brtt:>8.3f} {rtt.offset:>8.3f}   " + \
+                #        f"{rtt.rack_send:>11.0f} {rtt.fq_dequeue:>11.0f} {rtt.offset_send:>8.3f}   " + \
+                #        f"{rtt.xdp_ingress:>11.0f} {rtt.rack_recv:>11.0f} {rtt.offset_recv:>8.3f}   " + \
+                #        f"{rtt.fq:>8.3f} {rtt.tc_fq:>8.3f}\n"
+    
+        # sock trace may have no entries
+        return True
             
     def relevant_rtt(self, ts):
-        befores = [t for t in self.rtts if t.rack_recv <= ts]
+        befores = [t for t in self.rtts if t.rack_recv <= ts and not t.rack_is_invalid]
         if len(self.rtts) >= len(befores) + 1:
-            next = self.rtts[len(befores)]
             return (max(befores, key=lambda x: x.rack_recv), next)
         else:
             return (max(befores, key=lambda x: x.rack_recv), max(befores, key=lambda x: x.rack_recv))

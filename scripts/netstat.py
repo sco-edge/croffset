@@ -52,5 +52,3 @@ for k in ip_ext_old:
         continue
     if ip_ext_new[k] - ip_ext_old[k] != 0:
         print(k, ip_ext_new[k] - ip_ext_old[k])
-
-exit()
