@@ -54,11 +54,11 @@ kprobe:tcp_mark_skb_lost
 
 	$len = $skb->len;
 	
-	printf("%lld tcp_mark_skb_lost() 0x%llx 0x%llx %d %d   %d %d %d %d   %d %d\n",
+	printf("%lld tcp_mark_skb_lost() 0x%llx 0x%llx %d %d   %d %d %d %d   %d %d %lld\n",
 		   nsecs,
 		   $sk, $skb, $port, $gso_segs,
 		   $tolerance, $diff, $tp->rack.dsack_seen, $len,
-		   $tp->rack.rtt_us, $f_srtt_us);
+		   $tp->rack.rtt_us, $f_srtt_us, $skb->skb_mstamp_ns);
 }
 
 kprobe:tcp_check_dsack
@@ -187,16 +187,19 @@ kprobe:tcp_rate_skb_delivered
 /@delivery_flag || @clean_rtx_flag/
 {
 	$sk = (struct sock *)arg0;
+	$tp = (struct tcp_sock *)$sk;
 	$skb = (struct sk_buff *)arg1;
 	$cb = (struct tcp_skb_cb *)$skb->cb;
 	$end_seq = $cb->end_seq;
 	$len = $skb->len;
 	$start_seq = $end_seq - $len;
+	$tcp_mstamp = $tp->tcp_mstamp;
+	$tx_tstamp = $skb->skb_mstamp_ns;
 
-	printf("%lld tcp_rate_skb_delivered() 0x%llx 0x%llx 0x%x 0x%x   %d\n",
+	printf("%lld tcp_rate_skb_delivered() 0x%llx 0x%llx 0x%x 0x%x   %d %lld %lld\n",
 		   nsecs,
 		   $sk, $skb, $start_seq, $end_seq,
-		   $len);
+		   $len, $tcp_mstamp, $tx_tstamp);
 	@delivery_flag = false;
 	@clean_rtx_flag = false;
 }

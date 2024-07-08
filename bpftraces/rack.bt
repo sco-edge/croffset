@@ -10,11 +10,14 @@ kprobe:tcp_ack
 	$sk = (struct sock *)arg0;
 	$port = $sk->__sk_common.skc_num;
 	$skb = (struct sk_buff *)arg1;
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$ack_seq = $cb->ack_seq;
 	$mark = $skb->mark;
 
-	printf("%lld tcp_ack() 0x%llx 0x%llx 0x%x %d\n",
+	printf("%lld tcp_ack() 0x%llx 0x%llx 0x%x %d   0x%x\n",
 		   nsecs,
-		   arg0, arg1, $mark, $port);
+		   arg0, arg1, $mark, $port,
+		   $ack_seq);
 }
 
 kprobe:tcp_rack_advance
@@ -33,7 +36,7 @@ kprobe:tcp_rack_advance
 
 	$rtt_us = $tp->tcp_mstamp - $xmit_time;
 	$minmax = $tp->rtt_min;
-	$tcp_min_rtt = $minmax.s[0].v >> 2;
+	$tcp_min_rtt = $minmax.s[0].v;
 
 	printf("%lld tcp_rack_advance() %d 0x%x 0x%x %d   %d %llu %llu %llu   %u\n",
 		  nsecs,
