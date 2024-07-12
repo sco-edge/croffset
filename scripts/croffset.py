@@ -12,6 +12,8 @@ class MeasuredRTT:
     xdp_ingress = None
     fq_enqueue = None
     fq_dequeue = None
+    enqueue_cpu = None
+    dequeue_cpu = None
 
     # All RTTs are stored in us unit
     trtt = None
@@ -24,13 +26,15 @@ class MeasuredRTT:
 
     rack_is_invalid = None
 
-    def __init__(self, mark, rack_send, rack_recv, xdp_ingress, fq_enqueue, fq_dequeue, rack_is_invalid):
+    def __init__(self, mark, rack_send, rack_recv, xdp_ingress, fq_enqueue, fq_dequeue, rack_is_invalid, enqueue_cpu, dequeue_cpu):
         self.mark = mark
         self.rack_send = rack_send
         self.rack_recv = rack_recv
         self.xdp_ingress = xdp_ingress
         self.fq_enqueue = fq_enqueue
         self.fq_dequeue = fq_dequeue
+        self.enqueue_cpu = enqueue_cpu
+        self.dequeue_cpu = dequeue_cpu
         self.rack_is_invalid = rack_is_invalid
 
         self.trtt = (rack_recv - rack_send) / 1000
@@ -250,8 +254,9 @@ class Flow:
 
                     ts = int(tokens[0])
                     skb = padded_hex(int(tokens[3], 16), 16)
-                    skb_mstamp_ns = int(tokens[4])
-                    queued[skb] = (ts, skb_mstamp_ns)
+                    enqueue_cpu = int(tokens[4])
+                    skb_mstamp_ns = int(tokens[5])
+                    queued[skb] = (ts, enqueue_cpu, skb_mstamp_ns)
                     continue
 
                 # FQ dequeue events
@@ -262,19 +267,23 @@ class Flow:
 
                     ts = int(tokens[0])
                     skb = padded_hex(int(tokens[3], 16), 16)
-                    skb_mstamp_ns = int(tokens[4])
+                    dequeue_cpu = int(tokens[4])
+                    skb_mstamp_ns = int(tokens[5])
 
                     if skb in queued:
-                        (enqueue_ts, enqueue_skb_mstamp_ns) = queued.pop(skb)
+                        (enqueue_ts, enqueue_cpu, enqueue_skb_mstamp_ns) = queued.pop(skb)
                         
                         # div_u64() in the kernel seems to truncate the decimal point
                         skb_mstamp_us = int(skb_mstamp_ns / 1_000)
   
+                        if enqueue_cpu != dequeue_cpu:
+                            print(f"{skb} {skb_mstamp_ns} {enqueue_cpu} {dequeue_cpu}")
+
                         # skb_mstamp_us works as an identifier for sk_buff
                         if not skb_mstamp_us in self.fqs_map:
-                            self.fqs_map[skb_mstamp_us] = [(enqueue_ts, ts)]
+                            self.fqs_map[skb_mstamp_us] = [(enqueue_ts, ts, enqueue_cpu, dequeue_cpu)]
                         else:
-                            self.fqs_map[skb_mstamp_us].append((enqueue_ts, ts))
+                            self.fqs_map[skb_mstamp_us].append((enqueue_ts, ts, enqueue_cpu, dequeue_cpu))
         
         return len(self.fqs_map)
 
@@ -344,9 +353,9 @@ class Flow:
                 if not int(rack_send_us) in self.fqs_map:
                     continue
 
-                (fq_enqueue, fq_dequeue) = min(self.fqs_map[rack_send_us], key=lambda x: x)
+                (fq_enqueue, fq_dequeue, enqueue_cpu, dequeue_cpu) = min(self.fqs_map[rack_send_us], key=lambda x: x)
                 try:
-                    rtt = MeasuredRTT(mark, rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue, is_invalid)
+                    rtt = MeasuredRTT(mark, rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue, is_invalid, enqueue_cpu, dequeue_cpu)
                     # print(rack_send, rack_recv, xdp_ts, fq_enqueue, fq_dequeue)
                     self.rtts.append(rtt)
                 except ValueError:
@@ -360,7 +369,7 @@ class Flow:
                        f"{rtt.trtt:>8.3f} {rtt.brtt:>8.3f} {rtt.offset:>8.3f}   " + \
                        f"{rtt.rack_send:>11.0f} {rtt.fq_dequeue:>11.0f} {rtt.offset_send:>8.3f}   " + \
                        f"{rtt.xdp_ingress:>11.0f} {rtt.rack_recv:>11.0f} {rtt.offset_recv:>8.3f}   " + \
-                       f"{rtt.fq:>8.3f} {rtt.tc_fq:>8.3f}\n"
+                       f"{rtt.fq:>8.3f} {rtt.tc_fq:>8.3f} {rtt.enqueue_cpu} {rtt.dequeue_cpu}\n"
                 rtt_file.write(line)
         
         return True
@@ -646,7 +655,7 @@ class Flow:
                 # if delivered_sent_us in self.fqs_map:
                 skb_mstamp_us = int(found_loss.skb_mstamp / 1_000)
                 if skb_mstamp_us in self.fqs_map:
-                    (fq_enqueue, fq_dequeue) = min(self.fqs_map[skb_mstamp_us], key=lambda x: x)
+                    (fq_enqueue, fq_dequeue, _, _) = min(self.fqs_map[skb_mstamp_us], key=lambda x: x)
                     L_tau = (delivered_ts - found_loss.skb_mstamp) / 1_000 - found_loss.rack_rtt_us - found_loss.reo_wnd
                     compensation = i_rtt.offset_recv + (fq_dequeue - found_loss.skb_mstamp) / 1_000 - m_rtt.offset_recv - m_rtt.offset_send
                     compensation_alternative = (fq_dequeue - found_loss.skb_mstamp) / 1_000 - m_rtt.offset_send
