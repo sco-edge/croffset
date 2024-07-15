@@ -192,7 +192,7 @@ if __name__ == "__main__":
     argparser.add_argument('--plot', '-p', action="store_true")
     argparser.add_argument('--sock-only', action="store_true")
     argparser.add_argument('--path', default="output")
-    argparser.add_argument('--reset-rtt', action="store_true")
+    argparser.add_argument('--reuse-rtt', action="store_true")
     argparser.add_argument('--post-analysis', action="store_true")
 
     global args
@@ -212,12 +212,12 @@ if __name__ == "__main__":
         exit()
 
     # Main logic
-    if args.reset_rtt:
-        hflows = analyze_traces(configs.host, False)
-        cflows = analyze_traces(configs.container, True)
-    else:
+    if args.reuse_rtt:
         hflows = parse_rtts(configs.host, False)
         cflows = parse_rtts(configs.container, True)
+    else:
+        hflows = analyze_traces(configs.host, False)
+        cflows = analyze_traces(configs.container, True)
 
     # Plotting
     if args.plot == True:
