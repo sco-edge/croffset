@@ -276,8 +276,8 @@ class Flow:
                         # div_u64() in the kernel seems to truncate the decimal point
                         skb_mstamp_us = int(skb_mstamp_ns / 1_000)
   
-                        if enqueue_cpu != dequeue_cpu:
-                            print(f"{skb} {skb_mstamp_ns} {enqueue_cpu} {dequeue_cpu}")
+                        # if enqueue_cpu != dequeue_cpu:
+                        #     print(f"{skb} {skb_mstamp_ns} {enqueue_cpu} {dequeue_cpu}")
 
                         # skb_mstamp_us works as an identifier for sk_buff
                         if not skb_mstamp_us in self.fqs_map:
