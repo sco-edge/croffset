@@ -28,10 +28,10 @@ def analyze_sequences(experiment):
             if method == "fq_dequeue()":
                 if edt in flows[sk]:
                     if sk in last_dequeue_edt_per_flow:
-                        if edt < last_dequeue_edt_per_flow[sk]:
+                        if edt < last_dequeue_edt_per_flow[sk][0]:
                             # print(ts, skb, cpu)
-                            print(last_dequeue_edt_per_flow[sk], l, end="")
-                    last_dequeue_edt_per_flow[sk] = edt
+                            print(last_dequeue_edt_per_flow[sk][0], last_dequeue_edt_per_flow[sk][1], l, end="")
+                    last_dequeue_edt_per_flow[sk] = (edt, cpu)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
