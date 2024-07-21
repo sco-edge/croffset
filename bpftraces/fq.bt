@@ -21,10 +21,10 @@ kretprobe:fq_dequeue
 	$sk = (struct sock *)$skb->sk;
 	$skb_mstamp_ns = $skb->skb_mstamp_ns;
 	$delay = nsecs - @start[retval];
-	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu %llu %d\n",
+	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu %llu %d %d\n",
 		   nsecs,
 		   $sk, $skb, cpu, $skb_mstamp_ns,
-		   $delay, $sk->sk_protocol);
+		   $delay, $sk->sk_protocol, $skb->ooo_okay);
 	delete(@start[retval]);
 }
 
