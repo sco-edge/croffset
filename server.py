@@ -433,14 +433,14 @@ def start_instruments(interface):
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
 
-    # write_xmit
-    with open(f'write.{experiment}.out', 'w') as write_f:
-        # write_p = subprocess.Popen(["./write_xmit.bt"],
-        #                           stdout=write_f, cwd=os.path.join(swd, '../bpftraces'))
-        write_p = subprocess.Popen(["./ip_queue_xmit.bt"],
-                                  stdout=write_f, cwd=os.path.join(swd, '../bpftraces'))
-    instrument_files.append(write_f)
-    instrument_procs.append(write_p)
+    # # write_xmit
+    # with open(f'write.{experiment}.out', 'w') as write_f:
+    #     # write_p = subprocess.Popen(["./write_xmit.bt"],
+    #     #                           stdout=write_f, cwd=os.path.join(swd, '../bpftraces'))
+    #     write_p = subprocess.Popen(["./ip_queue_xmit.bt"],
+    #                               stdout=write_f, cwd=os.path.join(swd, '../bpftraces'))
+    # instrument_files.append(write_f)
+    # instrument_procs.append(write_p)
 
     return (instrument_files, instrument_procs)
 
