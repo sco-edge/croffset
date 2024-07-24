@@ -3,19 +3,49 @@ import argparse
 import os
 import numpy as np
 
-class QueueStatus:
-    last_enqueue_edt = None
-    last_enqueue_cpu = None
-    last_dequeue_edt = None
-    last_dequeue_cpu = None
-    queue = set()
+class QueueingInfo:
+    skb = None
+    edt = None
+    ts = None
+    cpu = None
+    is_dequeue = None
+    is_ooo = False
 
-    ooo_enqueue = 0
-    ooo_dequeue = 0
-    ooo_dequeue_legal = 0
+    def __init__(self, skb, edt, ts, cpu, is_dequeue):
+        self.skb = skb
+        self.edt = edt
+        self.ts = ts
+        self.cpu = cpu
+        self.is_dequeue = is_dequeue
 
+    def mark_ooo(self):
+        self.is_ooo = True
+
+class QueueLog:
+    queue = {}
+
+    def length(self):
+        return len(self.queue)
+    
+    def enqueue(self, item):
+        self.queue[item.edt] = item
+    
+    def dequeue(self, item):
+        if not item.is_ooo:
+            self.queue.pop(item.edt)
+            return -1
+        
+        if item.edt == min(self.queue, key=lambda x: self.queue[x].edt):
+            self.queue.pop(item.edt)
+            return 0
+        else:
+            urgent_items = list(filter(lambda x: self.queue[x].edt <= item.ts and self.queue[x].edt < item.edt, self.queue))
+            self.queue.pop(item.edt)
+            return len(urgent_items)
+        
 def ooo_queuing(experiment):
-    flows = {}
+    enqueued_per_flow = {}
+    qi_per_flow = {}
     with open(f"fq.{experiment}.out", "r") as file:    
         lines = file.readlines()
         for l in lines:
@@ -29,51 +59,68 @@ def ooo_queuing(experiment):
             skb = tokens[3]
             cpu = tokens[4]
             edt = int(tokens[5])
-            if not sk in flows:
-                flows[sk] = QueueStatus()
+            if not sk in enqueued_per_flow:
+                enqueued_per_flow[sk] = {}
 
             if method == "fq_enqueue()":
-                if sk in flows:
-                    qs = flows[sk]
-                    qs.queue.add(edt)
-                    # print(len(qs.queue), edt - ts, l, end="")
-                    if not qs.last_enqueue_edt:
-                        qs.last_enqueue_edt = edt
-                        qs.last_enqueue_cpu = cpu
-                        continue
-
-                    if edt < qs.last_enqueue_edt:
-                        qs.ooo_enqueue += 1
-                        # print(last_dequeue_edt_per_flow[sk][0], last_dequeue_edt_per_flow[sk][1], l, end="")
-                    qs.last_enqueue_edt = edt
-                    qs.last_enqueue_cpu = cpu
+                if sk in enqueued_per_flow:
+                    enqueued = enqueued_per_flow[sk]
+                    enqueued[edt] = (skb, ts, cpu)
 
             if method == "fq_dequeue()":
-                # if edt == 574068449121493:
-                #     break
-                if sk in flows:
-                    qs = flows[sk]
-                    if edt in qs.queue:
-                        qs.queue.remove(edt)
-                    # print(len(qs.queue), edt - ts, l, end="")
-                    if not qs.last_dequeue_edt:
-                        qs.last_dequeue_edt = edt
-                        qs.last_dequeue_cpu = cpu
-                        continue
+                if sk in enqueued_per_flow:
+                    enqueued = enqueued_per_flow[sk]
+                    if edt in enqueued:
+                        (skb, enqueue, enqueue_cpu) = enqueued[edt]
+                        enqueue_qi = QueueingInfo(skb, edt, enqueue, enqueue_cpu, False)
+                        dequeue_qi = QueueingInfo(skb, edt, ts, cpu, True)
 
-                    if edt < qs.last_dequeue_edt:
-                        print(len(qs.queue), l)
-                        for entry in qs.queue:
-                            print(entry, edt - entry)
-                        qs.ooo_dequeue += 1
-                        if len(qs.queue) == 0:
-                            qs.ooo_dequeue_legal += 1
-                    qs.last_dequeue_edt = edt
-                    qs.last_dequeue_cpu = cpu
+                        if sk in qi_per_flow:
+                            qi_per_flow[sk].append(enqueue_qi)
+                            qi_per_flow[sk].append(dequeue_qi)
+                        else:
+                            qi_per_flow[sk] = [enqueue_qi, dequeue_qi]
+                    else:
+                        print("Not enqueued but dequeued:", l)
 
-    for sk in flows:
-        if flows[sk].ooo_enqueue != 0 or flows[sk].ooo_dequeue != 0 or flows[sk].ooo_dequeue_legal != 0:
-            print(sk, flows[sk].ooo_enqueue, flows[sk].ooo_dequeue, flows[sk].ooo_dequeue_legal)
+    for sk in qi_per_flow:
+        if len(qi_per_flow[sk]) < 1000:
+            continue
+        qi_per_flow[sk] = sorted(qi_per_flow[sk], key=lambda x: x.ts)
+        ooo = 0
+        looo = 0
+
+        last_dequeue = None
+        for qi in qi_per_flow[sk]:
+            if not qi.is_dequeue:
+                continue
+
+            if last_dequeue == None:
+                last_dequeue = qi
+                continue
+
+            if last_dequeue.edt > qi.edt:
+                # print(f"{last_dequeue.edt} {qi.edt} marked")
+                last_dequeue.mark_ooo()
+
+            last_dequeue = qi
+
+        ql = QueueLog()
+        for qi in qi_per_flow[sk]:
+            if not qi.is_dequeue:
+                ql.enqueue(qi)
+                print(f"E {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()}")
+            else:
+                res = ql.dequeue(qi)
+                if res >= 0:
+                    ooo += 1
+                    if res == 0:
+                        looo += 1
+                    print(f"D {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()} R{res}")
+                else:
+                    print(f"D {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()}")
+
+        print(f"sk: {sk} OOO: {ooo} OOO-Legal: {looo}")
 
 def dequeue_ordering(experiment):
     count = 0
