@@ -22,10 +22,10 @@ kprobe:tcp_rack_detect_loss
 	$f_srtt_us = $tp->srtt_us >> 3;
 	//$no_reo_wnd = $tp->sacked_out - $tp->reordering;
 
-	printf("%lld tcp_rack_detect_loss() enter 0x%llx %d %d %d   %d %d %d\n",
+	printf("%lld tcp_rack_detect_loss() enter 0x%llx %d %d %d   %d %d %d %d\n",
 		   nsecs,
 		   $sk, $tp->reord_seen, $inet_csk->icsk_ca_state, $tp->sacked_out,
-		   $tp->reordering, $f_tcp_min_rtt * $tp->rack.reo_wnd_steps, $f_srtt_us);
+		   $tp->reordering, $f_tcp_min_rtt * $tp->rack.reo_wnd_steps, $f_srtt_us, $tp->rack.reo_wnd_steps);
 }
 
 kretprobe:tcp_rack_detect_loss
