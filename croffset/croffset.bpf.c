@@ -1717,8 +1717,9 @@ int pping_xdp_ingress(struct xdp_md *ctx)
 	if (meta + 1 > data)
 		return XDP_ABORTED;
 	
-	meta->mark = 4369;
-	//pping_xdp(ctx, meta->mark);
+	// pping_xdp(ctx, meta->mark);
+	meta->mark = 100;
+	// meta->mark = bpf_get_prandom_u32();
 
 	struct ts_event te = {
 		.event_type = EVENT_TYPE_TS,
