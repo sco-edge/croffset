@@ -12,3 +12,6 @@
 [submodule "clean-slate/croffset/bpftool"]
 	path = clean-slate/croffset/bpftool
 	url = https://github.com/libbpf/bpftool.git
+[submodule "clean-slate/blazesym"]
+	path = clean-slate/blazesym
+	url = https://github.com/libbpf/blazesym.git
