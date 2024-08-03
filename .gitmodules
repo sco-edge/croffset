@@ -9,3 +9,6 @@
 [submodule "clean-slate/croffset/libbpf"]
 	path = clean-slate/croffset/libbpf
 	url = https://github.com/libbpf/libbpf.git
+[submodule "clean-slate/croffset/bpftool"]
+	path = clean-slate/croffset/bpftool
+	url = https://github.com/libbpf/bpftool.git
