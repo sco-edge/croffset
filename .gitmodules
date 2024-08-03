@@ -6,3 +6,6 @@
 	path = lib/xdp-tools
 	url = https://github.com/xdp-project/xdp-tools
 	ignore = dirty
+[submodule "clean-slate/croffset/libbpf"]
+	path = clean-slate/croffset/libbpf
+	url = https://github.com/libbpf/libbpf.git
