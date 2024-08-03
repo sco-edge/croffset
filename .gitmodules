@@ -15,3 +15,6 @@
 [submodule "clean-slate/blazesym"]
 	path = clean-slate/blazesym
 	url = https://github.com/libbpf/blazesym.git
+[submodule "clean-slate/croffset/blazesym"]
+	path = clean-slate/croffset/blazesym
+	url = https://github.com/libbpf/blazesym.git
