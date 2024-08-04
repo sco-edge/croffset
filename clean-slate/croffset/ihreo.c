@@ -58,11 +58,18 @@ int main(int argc, char *argv[])
 	skel->rodata->cvalue = 123;
 
 	err = ihreo_bpf__load(skel);
+	// for (int i = 0; i < sizeof(log_buf); i++) {
+	// 	if (log_buf[i] == 0 && log_buf[i+1] == 0) {
+	// 		break;
+	// 	}
+	// 	printf("%c", log_buf[i]);
+	// }
 	if (err) {
 		fprintf(stderr, "ihreo_bpf__load() failed: %d\n", err);
 		return EXIT_FAILURE;
 	}
 
+	// It seems to do not attach xdp programs
 	err = ihreo_bpf__attach(skel);
 	if (err) {
 		fprintf(stderr, "ihreo_bpf__attach failed: %d\n", err);
