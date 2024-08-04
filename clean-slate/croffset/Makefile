@@ -8,14 +8,14 @@ BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 LIBBPF_SRC := $(abspath ./libbpf/src)
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 LIBBLAZESYM_SRC := $(abspath blazesym/target/release/libblazesym_c.a)
-INCLUDES := -I$(OUTPUT) -I./libbpf/include/uapi
+# LIBXDP_OBJ := $(abspath ./xdp-tools/lib/libxdp/libxdp.a)
+INCLUDES := -I$(OUTPUT) -I./libbpf/include/uapi -I./xdp-tools/headers
 CFLAGS := -g -O2 -Wall
 BPFCFLAGS := -g -O2 -Wall
 INSTALL ?= install
 prefix ?= /usr/local
-ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' \
-			 | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/' \
-			 | sed 's/riscv64/riscv/' | sed 's/loongarch.*/loongarch/')
+ARCH ?= x86
+VMLINUX ?= $(ARCH)/vmlinux.h
 BTFHUB_ARCHIVE ?= $(abspath btfhub-archive)
 ifeq ($(ARCH),x86)
 CARGO ?= $(shell which cargo)
@@ -24,10 +24,6 @@ USE_BLAZESYM ?= 0
 else
 USE_BLAZESYM ?= 1
 endif
-endif
-
-ifeq ($(wildcard $(ARCH)/),)
-$(error Architecture $(ARCH) is not supported yet. Please open an issue)
 endif
 
 APPS = tcptop ihreo
@@ -114,6 +110,22 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE=  OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
+# $(LIBXDP_OBJ):
+# 	$(call msg,LIB,$@)
+# 	$(Q)./xdp-tools/configure $@
+# 	$(Q)$(MAKE) -C xdp-tools libxdp
+
+# This eBPF program runs on custom Linux kernel (based on 5.19.17)
+# Copy vmlinux.h using bpftool
+$(VMLINUX): $(BPFTOOL)
+	$(call msg,INC,$@)
+	$(Q)mkdir -p $(ARCH)
+	$(Q)$(BPFTOOL) btf dump file /sys/kernel/btf/vmlinux format c > $(VMLINUX)
+
+# $(APPS): %: $(OUTPUT)/%.o $(COMMON_OBJ) $(LIBBPF_OBJ) $(LIBXDP_OBJ) $(VMLINUX) | $(OUTPUT)
+# 	$(call msg,BINARY,$@)
+# 	$(Q)$(CC) $(CFLAGS) $^ $(LDFLAGS) -lelf -lz -o $@
+
 $(APPS): %: $(OUTPUT)/%.o $(COMMON_OBJ) $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(LDFLAGS) -lelf -lz -o $@
@@ -132,7 +144,7 @@ $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-SKEL,$@)
 	$(Q)$(BPFTOOL) gen skeleton $< > $@
 
-$(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(ARCH)/vmlinux.h | $(OUTPUT)
+$(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) $(BPFCFLAGS) -target bpf -D__TARGET_ARCH_$(ARCH)	      \
 		     -I$(ARCH)/ $(INCLUDES) -c $(filter %.c,$^) -o $@ &&      \

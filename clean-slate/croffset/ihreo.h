@@ -10,6 +10,8 @@ struct flow_id {
     __u32 saddr;
     __u16 dport;
     __u16 sport;
+    __u16 valid;
+    __u16 preserved;
 };
 
 struct offset_info {
