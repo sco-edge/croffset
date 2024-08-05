@@ -16,7 +16,6 @@
 #include <getopt.h>
 #include <stdbool.h>
 #include <ctype.h>
-#include <signal.h> // For detecting Ctrl-C
 #include <sys/resource.h> // For setting rlmit
 #include <time.h>
 #include <pthread.h>
@@ -26,6 +25,7 @@
 #include <linux/unistd.h>
 #include <linux/membarrier.h>
 #include <limits.h>
+#include <signal.h>
 
 #include "ihreo.skel.h"
 #include "ihreo.h" //common structs for user-space and BPF parts
@@ -69,6 +69,7 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
+	/* Attach at kretprobe/fq_dequeue */
 	// It seems to do not attach xdp programs
 	err = ihreo_bpf__attach(skel);
 	if (err) {
@@ -76,7 +77,39 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 
-	struct bpf_link *link = bpf_program__attach_xdp(skel->progs.ihreo_xdp, ifindex);
+	/* Attach at TC ingress */
+	int prog_fd;
+	DECLARE_LIBBPF_OPTS(bpf_tc_hook, hook, .ifindex = ifindex,
+			.attach_point = 1 << 0); /* BPF_TC_INGRESS = 1 << 0 */
+	DECLARE_LIBBPF_OPTS(bpf_tc_opts, tc_ingress_opts);
+
+	err = bpf_tc_hook_create(&hook);
+	if (err) {
+		if (err == -EEXIST) {
+			fprintf(stderr, "bpf_tc_hook_create() failed (EEXIST).\n");
+		} else {
+			fprintf(stderr, "bpf_tc_hook_create() failed\n");
+		}
+		return EXIT_FAILURE;
+	}
+
+	prog_fd = bpf_program__fd(
+		bpf_object__find_program_by_name(skel->obj, "tc_marker"));
+	if (prog_fd < 0) {
+		fprintf(stderr, "bpf_object__find_program_by_name() failed\n");
+		return EXIT_FAILURE;
+	}
+
+	tc_ingress_opts.prog_fd = prog_fd;
+	tc_ingress_opts.prog_id = 0;
+	err = bpf_tc_attach(&hook, &tc_ingress_opts);
+	if (err) {
+		fprintf(stderr, "bpf_tc_attach() failed\n");
+		return EXIT_FAILURE;
+	}
+
+	/* Attach at XDP */
+	struct bpf_link *link = bpf_program__attach_xdp(skel->progs.xdp_marker, ifindex);
 	if (!link) {
 		fprintf(stderr, "bpf_program__attach_xdp() failed\n");
 		return EXIT_FAILURE;

@@ -29,6 +29,10 @@
 
 const volatile int cvalue = -1;
 
+struct meta_info {
+	__u32 mark;
+} __attribute__((aligned(4)));
+
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__type(key, struct flow_id);
@@ -267,12 +271,12 @@ int BPF_KRETPROBE(kretprobe_fq_dequeue, struct sk_buff *ret)
 	/* The last transmission is in-order (normal case) */
 	else {
 		/* It generates massive logs in the tracing_pipe */
-		// bpf_printk(". 0x%llx:%u-0x%llx:%u ledt=%llu, nedt=%llu loffset=%lld, noffset=%lld, cvalue=%d",
-		// 		   daddr, dport, saddr, sport,
-		// 		   oinfo->last_edt, skb_mstamp_ns,
-		// 		   oinfo->ooo_dequeued - oinfo->ooo_edt, // loffset
-		// 		   now_ns - skb_mstamp_ns, // noffset
-		// 		   oinfo->cvalue);
+		bpf_printk(". 0x%llx:%u-0x%llx:%u ledt=%llu, nedt=%llu loffset=%lld, noffset=%lld, cvalue=%d",
+				   daddr, dport, saddr, sport,
+				   oinfo->last_edt, skb_mstamp_ns,
+				   oinfo->ooo_dequeued - oinfo->ooo_edt, // loffset
+				   now_ns - skb_mstamp_ns, // noffset
+				   oinfo->cvalue);
 
 		/* Update only last_dequeued and last_edt */
 		ninfo.ooo_dequeued = oinfo->ooo_dequeued;
@@ -288,24 +292,54 @@ int BPF_KRETPROBE(kretprobe_fq_dequeue, struct sk_buff *ret)
 }
 
 SEC("xdp")
-int ihreo_xdp(struct xdp_md *ctx)
+int xdp_marker(struct xdp_md *ctx)
 {
-    // void *data = (void *)(long)ctx->data;
-    // void *data_end = (void *)(long)ctx->data_end;
-    // int pkt_sz = data_end - data;
+	struct meta_info *meta;
+	void *data;
+	int ret = bpf_xdp_adjust_meta(ctx, -(int)sizeof(*meta));
+	if (ret < 0)
+		return XDP_ABORTED;
+
+	data = (void *)(unsigned long)ctx->data;
+	meta = (void *)(unsigned long)ctx->data_meta;
+	if ((void *)(meta + 1) > data)
+		return XDP_ABORTED;
 
 	struct flow_id fid = parse_flow_id(ctx);
 	if (fid.valid == 1) {
 		// bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, fid.valid);
 		struct offset_info *oinfo = bpf_map_lookup_elem(&offset_state, &fid);
 		if (oinfo) {
-			bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, oinfo->cvalue);
+			// meta->mark = 150;
+			meta->mark = oinfo->cvalue / 1000;
+			// bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, oinfo->cvalue / 1000);
 		} else {
-			bpf_printk("%x:%u-%x:%u no entry", fid.saddr, fid.sport, fid.daddr, fid.dport);
+			// bpf_printk("%x:%u-%x:%u no entry", fid.saddr, fid.sport, fid.daddr, fid.dport);
 		}
 		// bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, fid.valid);
 	}
     return XDP_PASS;
+}
+
+SEC("tc")
+int tc_marker(struct __sk_buff *skb)
+{
+	void *data      = (void *)(unsigned long)skb->data;
+	void *data_end  = (void *)(unsigned long)skb->data_end;
+	void *data_meta = (void *)(unsigned long)skb->data_meta;
+	struct meta_info *meta = data_meta;
+
+	/* Check XDP gave us some data_meta */
+	if (meta + 1 > data) {
+		skb->mark = 0;
+		/* Skip "accept" if no data_meta is avail */
+		return 0; /* #define TC_ACT_OK 0 */
+	}
+
+	/* Hint: See func tc_cls_act_is_valid_access() for BPF_WRITE access */
+	skb->mark = meta->mark; /* Transfer XDP-mark to SKB-mark */
+
+	return 0;
 }
 
 char __license[] SEC("license") = "GPL";
