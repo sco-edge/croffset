@@ -26,7 +26,7 @@ USE_BLAZESYM ?= 1
 endif
 endif
 
-APPS = tcptop ihreo
+APPS = ihreo
 
 # export variables that are used in Makefile.btfgen as well.
 export OUTPUT BPFTOOL ARCH BTFHUB_ARCHIVE APPS
@@ -110,11 +110,6 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE=  OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
-# $(LIBXDP_OBJ):
-# 	$(call msg,LIB,$@)
-# 	$(Q)./xdp-tools/configure $@
-# 	$(Q)$(MAKE) -C xdp-tools libxdp
-
 # This eBPF program runs on custom Linux kernel (based on 5.19.17)
 # Copy vmlinux.h using bpftool
 $(VMLINUX): $(BPFTOOL)
@@ -124,7 +119,7 @@ $(VMLINUX): $(BPFTOOL)
 
 # $(APPS): %: $(OUTPUT)/%.o $(COMMON_OBJ) $(LIBBPF_OBJ) $(LIBXDP_OBJ) $(VMLINUX) | $(OUTPUT)
 # 	$(call msg,BINARY,$@)
-# 	$(Q)$(CC) $(CFLAGS) $^ $(LDFLAGS) -lelf -lz -o $@
+# 	$(Q)$(CC) $(CFLAGS) $^ $(LDFLAGS) -lelf -lz $(LIBBPF_OBJ) $(LIBXDP_OBJ) -o $@
 
 $(APPS): %: $(OUTPUT)/%.o $(COMMON_OBJ) $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
@@ -167,6 +162,11 @@ $(LIBBPF_OBJ): $(wildcard $(LIBBPF_SRC)/*.[ch]) | $(OUTPUT)/libbpf
 		    OBJDIR=$(dir $@)libbpf DESTDIR=$(dir $@)		      \
 		    INCLUDEDIR= LIBDIR= UAPIDIR=			      \
 		    install
+
+$(LIBXDP_OBJ):
+	$(call msg,LIB,$@)
+	$(Q)./xdp-tools/configure $@
+	$(Q)$(MAKE) -C xdp-tools BUILD_STATIC_ONLY=1 libxdp
 
 $(SIGSNOOP_ALIAS): sigsnoop
 	$(call msg,SYMLINK,$@)

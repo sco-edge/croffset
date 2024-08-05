@@ -307,16 +307,17 @@ int xdp_marker(struct xdp_md *ctx)
 
 	struct flow_id fid = parse_flow_id(ctx);
 	if (fid.valid == 1) {
-		// bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, fid.valid);
 		struct offset_info *oinfo = bpf_map_lookup_elem(&offset_state, &fid);
 		if (oinfo) {
-			// meta->mark = 150;
-			meta->mark = oinfo->cvalue / 1000;
-			// bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, oinfo->cvalue / 1000);
-		} else {
-			// bpf_printk("%x:%u-%x:%u no entry", fid.saddr, fid.sport, fid.daddr, fid.dport);
+			/* It means to use adaptive cvalue */
+			if (cvalue == -1) {
+				meta->mark = oinfo->cvalue / 1000;
+			}
+			/* Fix it to the constant otherwise. Zero means no compensation */
+			else {
+				meta->mark = cvalue;
+			}
 		}
-		// bpf_printk("%x:%u-%x:%u %d", fid.saddr, fid.sport, fid.daddr, fid.dport, fid.valid);
 	}
     return XDP_PASS;
 }
@@ -325,12 +326,11 @@ SEC("tc")
 int tc_marker(struct __sk_buff *skb)
 {
 	void *data      = (void *)(unsigned long)skb->data;
-	void *data_end  = (void *)(unsigned long)skb->data_end;
 	void *data_meta = (void *)(unsigned long)skb->data_meta;
 	struct meta_info *meta = data_meta;
 
 	/* Check XDP gave us some data_meta */
-	if (meta + 1 > data) {
+	if ((void *)(meta + 1) > data) {
 		skb->mark = 0;
 		/* Skip "accept" if no data_meta is avail */
 		return 0; /* #define TC_ACT_OK 0 */
