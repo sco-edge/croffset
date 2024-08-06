@@ -21,3 +21,9 @@ struct offset_info {
     __u64 ooo_edt;
     __u32 cvalue;
 };
+
+struct ihreo_config {
+    char ifname[16]; /* #define IF_NAMESIZE	16 */
+    int ifindex;
+    int cvalue;
+};
