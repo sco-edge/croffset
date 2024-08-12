@@ -1,0 +1,62 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+#include <linux/win_minmax.h>
+#include <net/tcp.h>
+
+BEGIN
+{
+	@delivery_flag = false;
+	@clean_rtx_flag = false;
+}
+
+kprobe:tcp_rack_detect_loss
+{
+	$sk = (struct sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sk;
+	$tp = (struct tcp_sock *)$sk;
+	
+	$minmax = $tp->rtt_min;
+	$f_tcp_min_rtt = $minmax.s[0].v >> 2;
+	$f_srtt_us = $tp->srtt_us >> 3;
+	//$no_reo_wnd = $tp->sacked_out - $tp->reordering;
+
+	printf("%lld tcp_rack_detect_loss() enter 0x%llx %d %d %d %d   %d %d %d\n",
+		   nsecs,
+		   $sk, $tp->reord_seen, $inet_csk->icsk_ca_state, $tp->sacked_out, $tp->reordering,
+		   $f_tcp_min_rtt * $tp->rack.reo_wnd_steps, $f_srtt_us, $tp->rack.reo_wnd_steps);
+}
+
+kretprobe:tcp_rack_detect_loss
+{
+	printf("%lld tcp_rack_detect_loss() exit\n",
+		   nsecs);
+}
+
+kprobe:tcp_mark_skb_lost
+{
+	$sk = (struct sock *)arg0;
+	$inet_csk = (struct inet_connection_sock *)$sk;
+	$tp = (struct tcp_sock *)$sk;
+
+	$port = $sk->__sk_common.skc_num;
+	$skb = (struct sk_buff *)arg1;
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$gso_segs = $cb->tcp_gso_segs;
+
+	$minmax = $tp->rtt_min;
+	$f_tcp_min_rtt = $minmax.s[0].v >> 2;
+	$f_srtt_us = $tp->srtt_us >> 3;
+
+	$tolerance = $tp->rack.rtt_us + $f_tcp_min_rtt * $tp->rack.reo_wnd_steps;
+	$diff = $tp->tcp_mstamp - ($skb->skb_mstamp_ns / 1000);
+
+	$len = $skb->len;
+	
+	printf("%lld tcp_mark_skb_lost() 0x%llx 0x%llx %d %d   %d %d %d %d   %d %d %lld %lld\n",
+		   nsecs,
+		   $sk, $skb, $port, $gso_segs,
+		   $tolerance, $diff, $tp->rack.dsack_seen, $len,
+		   $tp->rack.rtt_us, $f_srtt_us, $tp->rack.mstamp, $skb->skb_mstamp_ns);
+}
