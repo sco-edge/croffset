@@ -40,9 +40,14 @@ with open(sys.argv[2]) as file:
                 break
             new[queue].append(int(token))
 
+if len(new) != len(old):
+    exit()
+
 for i in range(0, 32):
     diffs = []
     for j in range(0, 64):
+        if len(new[i]) != len(old[i]):
+            exit()
         diff = new[i][j] - old[i][j]
         if diff != 0:
             diffs.append((j, diff))
