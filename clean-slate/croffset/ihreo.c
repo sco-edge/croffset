@@ -208,12 +208,13 @@ int main(int argc, char *argv[])
 
 	err = bpf_tc_hook_create(&hook);
 	if (err) {
+		/* EEXIST happens maybe due to cilium */
 		if (err == -EEXIST) {
-			fprintf(stderr, "bpf_tc_hook_create() failed (EEXIST).\n");
-		} else {
+			fprintf(stderr, "bpf_tc_hook_create() failed EEXIST\n");
+		} else if (err) {
 			fprintf(stderr, "bpf_tc_hook_create() failed\n");
+			return EXIT_FAILURE;
 		}
-		return EXIT_FAILURE;
 	}
 
 	prog_fd = bpf_program__fd(

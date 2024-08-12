@@ -271,12 +271,12 @@ int BPF_KRETPROBE(kretprobe_fq_dequeue, struct sk_buff *ret)
 	/* The last transmission is in-order (normal case) */
 	else {
 		/* It generates massive logs in the tracing_pipe */
-		bpf_printk(". 0x%llx:%u-0x%llx:%u ledt=%llu, nedt=%llu loffset=%lld, noffset=%lld, cvalue=%d",
-				   daddr, dport, saddr, sport,
-				   oinfo->last_edt, skb_mstamp_ns,
-				   oinfo->ooo_dequeued - oinfo->ooo_edt, // loffset
-				   now_ns - skb_mstamp_ns, // noffset
-				   oinfo->cvalue);
+		// bpf_printk(". 0x%llx:%u-0x%llx:%u ledt=%llu, nedt=%llu loffset=%lld, noffset=%lld, cvalue=%d",
+		// 		   daddr, dport, saddr, sport,
+		// 		   oinfo->last_edt, skb_mstamp_ns,
+		// 		   oinfo->ooo_dequeued - oinfo->ooo_edt, // loffset
+		// 		   now_ns - skb_mstamp_ns, // noffset
+		// 		   oinfo->cvalue);
 
 		/* Update only last_dequeued and last_edt */
 		ninfo.ooo_dequeued = oinfo->ooo_dequeued;
@@ -311,7 +311,12 @@ int xdp_marker(struct xdp_md *ctx)
 		if (oinfo) {
 			/* It means to use adaptive cvalue */
 			if (cvalue == -1) {
-				meta->mark = oinfo->cvalue / 1000;
+				if (oinfo->cvalue >= 200000) {
+					meta->mark = 200;
+				} else {
+					meta->mark = oinfo->cvalue / 1000;
+				}
+				// bpf_printk("XDP: 0x%llx:%u-0x%llx:%u %d", fid.daddr, fid.dport, fid.saddr, fid.sport, oinfo->cvalue);
 			}
 			/* Fix it to the constant otherwise. Zero means no compensation */
 			else {
