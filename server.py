@@ -17,6 +17,7 @@ class FlowStat:
     throughput:float = None
     retransmissions:int = None
     rtt_mean:int = None
+    sr:int = None
 
 def check_configuration():
     ret = True
@@ -29,7 +30,7 @@ def check_configuration():
         logging.error(f"{output.rstrip()} ({args.cca} is desired. Do sysctl.net.ipv4.tcp_congestion_control={args.cca})")
         ret = False
     else:
-        logging.info(output.rstrip())
+        logging.debug(output.rstrip())
 
     # Configure congestion control algorithm (container cluster)
     kubectl_check_bbr = ['kubectl', 'get', 'cm', 'cilium-config', '-n', 'kube-system', '-o', 'json']
@@ -44,7 +45,7 @@ def check_configuration():
             logging.error(f"enable_bbr = {enable_bbr} ({args.cca} is desired)")
             ret = False
         else:
-            logging.info(f"enable_bbr = {enable_bbr}")
+            logging.debug(f"enable_bbr = {enable_bbr}")
     else:
         if args.cca == "bbr":
             logging.error("json_output is wrong. no enable-bbr.")
@@ -70,7 +71,7 @@ def check_configuration():
         logging.error(f"{output.rstrip()} ({tcp_recovery} is desired. Do sysctl.net.ipv4.tcp_recovery={tcp_recovery})")
         ret = False
     else:
-        logging.info(output.rstrip())
+        logging.debug(output.rstrip())
 
     sysctl_tcp_early_retrans = ['sysctl', 'net.ipv4.tcp_early_retrans']
     p = subprocess.Popen(sysctl_tcp_early_retrans, stdout=subprocess.PIPE)
@@ -79,7 +80,7 @@ def check_configuration():
         logging.error(f"{output.rstrip()} ({tcp_early_retrans} is desired. Do sysctl.net.ipv4.tcp_early_retrans={tcp_early_retrans})")
         ret = False
     else:
-        logging.info(output.rstrip())
+        logging.debug(output.rstrip())
     
     # Get cluster nodes
     nodes = get_k8s_nodes()
@@ -129,11 +130,12 @@ def check_configuration():
     
     return ret
 
-def summarize_statistics(hflows, cflows):
+def summarize_statistics(hflows, cflows, host_sr):
     json_data = {}
     throughputs = []
     retransmissions = []
     rtts = []
+    srs = []
     
     json_data["app"] = args.app
     json_data["cca"] = args.cca
@@ -146,9 +148,11 @@ def summarize_statistics(hflows, cflows):
             retransmissions.append(hflow.retransmissions)
             rtts.append(hflow.rtt_mean)
 
-        print(experiment, f"h{len(hflows)}", args.cca, args.loss_detection, \
-            f"{np.sum(throughputs):.3f} {np.average(throughputs):.3f} {np.std(throughputs):.3f}", \
-            f"{np.average(retransmissions):.3f} {np.std(retransmissions):.3f} {np.average(rtts):.3f} {np.std(rtts):.3f}")
+        print(experiment, f"h{len(hflows)}", args.cvalue, args.cca, args.loss_detection, \
+            f"{np.sum(throughputs):.3f} {np.average(throughputs):.3f}", \
+            f"{np.sum(retransmissions)} {np.average(retransmissions):.1f}", \
+            f"{host_sr} {np.average(host_sr):.1f}", \
+            f"{np.average(rtts):.3f}", end="")
         json_data["host_aggregate_throughput"] = np.sum(throughputs)
         json_data["host_throughput_average"] = np.average(throughputs)
         json_data["host_throughput_std"] = np.std(throughputs)
@@ -156,6 +160,7 @@ def summarize_statistics(hflows, cflows):
         json_data["host_retransmissions_std"] = np.std(retransmissions)
         json_data["host_rtt_average"] = np.average(rtts)
         json_data["host_rtt_std"] = np.std(rtts)
+        json_data["host_sr"] = host_sr
 
     if len(cflows) > 0:
         for i, cflow in enumerate(cflows):
@@ -163,10 +168,13 @@ def summarize_statistics(hflows, cflows):
             throughputs.append(cflow.throughput)
             retransmissions.append(cflow.retransmissions)
             rtts.append(cflow.rtt_mean)
+            srs.append(cflow.sr)
 
-        print(experiment, f"c{len(cflows)}", args.cca, args.loss_detection, \
-            f"{np.sum(throughputs):.3f} {np.average(throughputs):.3f} {np.std(throughputs):.3f}", \
-            f"{np.average(retransmissions):.3f} {np.std(retransmissions):.3f} {np.average(rtts):.3f} {np.std(rtts):.3f}")
+        print(experiment, f"c{len(cflows)}", args.cvalue, args.cca, args.loss_detection, \
+            f"{np.sum(throughputs):.3f} {np.average(throughputs):.1f}", \
+            f"{np.sum(retransmissions)} {np.average(retransmissions):.1f}", \
+            f"{np.sum(srs)} {np.average(srs):.1f}", \
+            f"{np.average(rtts):.3f}", end="")
         json_data["container_aggregate_throughput"] = np.sum(throughputs)
         json_data["container_throughput_average"] = np.average(throughputs)
         json_data["container_throughput_std"] = np.std(throughputs)
@@ -174,6 +182,7 @@ def summarize_statistics(hflows, cflows):
         json_data["container_retransmissions_std"] = np.std(retransmissions)
         json_data["container_rtt_average"] = np.average(rtts)
         json_data["container_rtt_std"] = np.std(rtts)
+        json_data["container_sr"] = np.average(srs)
 
     with open(f'summary.{experiment}.json', 'w') as f:
         json.dump(json_data, f, indent=4)
@@ -216,22 +225,21 @@ def main():
         print('Check that kubeconfig is properly set.')
         exit(-1)
 
-    if not args.no_instrument:
-        # For remote instrument, at least 1 containers are used
-        num_container_instrument = int(args.container) if int(args.container) > 0 else 1
-        (h_meas_starts, cs_meas_starts, cc_meas_starts) = start_system_measurements(num_container_instrument, server_pods, client_pods)
-        (instrument_files, instrument_procs) = start_instruments(interface)
+    # For remote instrument, at least 1 containers are used
+    num_container_instrument = int(args.container) if int(args.container) > 0 else 1
+
+    logging.info("Start instrumentation.")
+    (instrument_files, instrument_procs) = start_instruments(interface)
     
-    # sock trace only for checking spurious retransmissions
-    if args.no_instrument and args.sock_only:
-        (instrument_files, instrument_procs) = start_sock_instrument(interface)
+    (h_meas_starts, cs_meas_starts, cc_meas_starts) = start_system_measurements(num_container_instrument, server_pods, client_pods)
         
-    time.sleep(4)
+    time.sleep(2)
 
     if args.instrument_only:
         print(f"{experiment}. Press \'Enter\' to end the recording.")
         _ = sys.stdin.readline()
     else:
+        logging.info(f"Clients now run for {duration} seconds.")
         if args.app == "neper":
             (hflows, cflows) = run_neper_clients(int(args.host), int(args.container),
                                                 duration, server_addr, server_pods, client_pods)
@@ -239,32 +247,41 @@ def main():
             (hflows, cflows) = run_iperf_clients(int(args.host), int(args.container),
                                                 duration, server_addr, server_pods, client_pods)
 
-    if not args.no_instrument:
-        # For remote instrument, at least 1 containers are used
-        num_container_instrument = int(args.container) if int(args.container) > 0 else 1
-        end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_container_instrument, server_pods, client_pods)
-        end_instruments(instrument_files, instrument_procs)
-
-    # sock trace only for checking spurious retransmissions
-    if args.no_instrument and args.sock_only:
-        for proc in instrument_procs:
-            proc.kill()
+    end_instruments(instrument_files, instrument_procs)
+    end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_container_instrument, server_pods, client_pods)
+    
+    # Read netstats to read spurious retransmissions
+    host_sr = read_sr(cflows)
 
     if not args.instrument_only:
         if len(hflows) != int(args.host) or len(cflows) != int(args.container):
             print(f'Inconsistent # flow. hflows={len(hflows)}, cflows={len(cflows)}')
             exit(-1)
 
-        summarize_statistics(hflows, cflows)
+        summarize_statistics(hflows, cflows, host_sr)
     
 def initialize_nic():
     logging.info("Initialize ice driver.")
+    subprocess.run(["rmmod", "irdma"])
     subprocess.run(["rmmod", "ice"])
-    time.sleep(0.5)
     subprocess.run(["modprobe", "ice"])
-    time.sleep(0.5)
     subprocess.Popen(["./flow_direction_tx_tcp.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
+    logging.info("Set smp_affinity.")
+    while not os.path.isfile("/proc/irq/200/smp_affinity"):
+        continue
     subprocess.Popen(["./smp_affinity.sh"], stdout=subprocess.DEVNULL, cwd=swd).communicate()
+
+    subprocess.run(["rmmod", "irdma"])
+
+    # if int(args.loss) != 0:
+    #     command = "tc qdisc show dev ens801f0 | awk '/root/ {print $3}' | awk -F: '{print $1}'"
+    #     result = subprocess.run(command, shell=True, capture_output=True, text=True)
+
+    #     root = result.stdout.rstrip()
+    #     for i in range(1, 64):
+    #         command = f"tc qdisc add dev ens801f0 parent {root}:{hex(i)[2:]} handle {i + 110}: netem loss {args.loss}%"
+    #         print(command)
+    #         result = subprocess.run(command, shell=True, capture_output=True, text=True)
 
 def start_system_measurements(num_cflows, server_pods, client_pods):
     # interrupts
@@ -341,28 +358,28 @@ def end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_c
         
     # container
     for i in range(0, num_cflows):
-        # server
-        end_cs_interrupts_f = tempfile.NamedTemporaryFile()
-        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
-                    "cat", "/proc/interrupts"], stdout=end_cs_interrupts_f)
-        with open(f'interrupts.cs{i}.{experiment}.out', 'w') as cs_interrupts_output:
-            subprocess.Popen(["./interrupts.py", cs_meas_starts[i][0].name, end_cs_interrupts_f.name],
-                            stdout=cs_interrupts_output, cwd=swd).communicate()
+        # # server
+        # end_cs_interrupts_f = tempfile.NamedTemporaryFile()
+        # subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+        #             "cat", "/proc/interrupts"], stdout=end_cs_interrupts_f)
+        # with open(f'interrupts.cs{i}.{experiment}.out', 'w') as cs_interrupts_output:
+        #     subprocess.Popen(["./interrupts.py", cs_meas_starts[i][0].name, end_cs_interrupts_f.name],
+        #                     stdout=cs_interrupts_output, cwd=swd).communicate()
             
-        end_cs_softirqs_f = tempfile.NamedTemporaryFile()
-        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
-                    "cat", "/proc/softirqs"], stdout=end_cs_softirqs_f)
-        with open(f'softirqs.cs{i}.{experiment}.out', 'w') as cs_softirqs_output:
-            subprocess.Popen(["./softirqs.py", cs_meas_starts[i][1].name, end_cs_softirqs_f.name],
-                            stdout=cs_softirqs_output, cwd=swd).communicate()
+        # end_cs_softirqs_f = tempfile.NamedTemporaryFile()
+        # subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+        #             "cat", "/proc/softirqs"], stdout=end_cs_softirqs_f)
+        # with open(f'softirqs.cs{i}.{experiment}.out', 'w') as cs_softirqs_output:
+        #     subprocess.Popen(["./softirqs.py", cs_meas_starts[i][1].name, end_cs_softirqs_f.name],
+        #                     stdout=cs_softirqs_output, cwd=swd).communicate()
             
-        end_cs_netstat_f = tempfile.NamedTemporaryFile()
-        subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
-                    "cat", "/proc/net/netstat"], stdout=end_cs_netstat_f)
-        with open(f'netstat.cs{i}.{experiment}.out', 'w') as cs_netstat_output:
-            subprocess.Popen(["./netstat.py", cs_meas_starts[i][2].name, end_cs_netstat_f.name],
-                            stdout=cs_netstat_output, cwd=swd).communicate()
-        
+        # end_cs_netstat_f = tempfile.NamedTemporaryFile()
+        # subprocess.run(["kubectl", "exec", server_pods[i][0], "--", \
+        #             "cat", "/proc/net/netstat"], stdout=end_cs_netstat_f)
+        # with open(f'netstat.cs{i}.{experiment}.out', 'w') as cs_netstat_output:
+        #     subprocess.Popen(["./netstat.py", cs_meas_starts[i][2].name, end_cs_netstat_f.name],
+        #                     stdout=cs_netstat_output, cwd=swd).communicate()
+
         # client
         end_cc_interrupts_f = tempfile.NamedTemporaryFile()
         subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
@@ -385,10 +402,69 @@ def end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_c
             subprocess.Popen(["./netstat.py", cc_meas_starts[i][2].name, end_cc_netstat_f.name],
                             stdout=cc_netstat_output, cwd=swd).communicate()
 
+def read_sr(cflows):
+    # We can only read the aggregate spurious retransmissions for host flows
+    host_sr = None
+    with open(f'netstat.h.{experiment}.out', 'r') as f:
+        lines = f.readlines()
+        for l in lines:
+            if l.startswith("TCPDSACKRecvSegs"):
+                host_sr = int(l.split()[1])
+
+        if host_sr == None:
+            host_sr = 0        
+
+    for i in range(0, len(cflows)):
+        container_sr = None
+        with open(f'netstat.cc{i}.{experiment}.out', 'r') as f:
+            lines = f.readlines()
+            for l in lines:
+                if l.startswith("TCPDSACKRecvSegs"):
+                    container_sr = int(l.split()[1])
+
+            if container_sr == None:
+                cflows[i].sr = 0
+            else:
+                cflows[i].sr = container_sr
+    
+    return host_sr
+    
 def start_instruments(interface):
     instrument_files = []
     instrument_procs =[]
 
+    # Compensation
+    if int(args.cvalue) == -1:
+        cvalue_p = subprocess.Popen(["./ihreo", "-i", interface], stdout=subprocess.DEVNULL, cwd=os.path.join(swd, '../clean-slate/croffset'))
+    else:
+        # cvalue_p = subprocess.Popen(["./ihreo", "-i", interface, "-c", args.cvalue], stdout=subprocess.DEVNULL, cwd=os.path.join(swd, '../clean-slate/croffset'))
+        cvalue_p = subprocess.Popen(["./ihreo", "-i", interface, "-c", args.cvalue], stdout=subprocess.DEVNULL, cwd=os.path.join(swd, '../clean-slate/croffset'))
+    instrument_procs.append(cvalue_p)
+    
+    # track_cpu
+    with open(f'track.{experiment}.out', 'w') as track_f:
+        track_p = subprocess.Popen(["./track.bt"],
+                                  stdout=track_f, cwd=os.path.join(swd, '../bpftraces'))
+    instrument_files.append(track_f)
+    instrument_procs.append(track_p)
+
+    # # rho
+    # with open(f'rho.{experiment}.out', 'w') as rho_f:
+    #     rho_p = subprocess.Popen(["./rho.bt"],
+    #                               stdout=rho_f, cwd=os.path.join(swd, '../bpftraces'))
+    # instrument_files.append(rho_f)
+    # instrument_procs.append(rho_p)
+
+    # fq
+    with open(f'fqd.{experiment}.out', 'w') as fq_delay_f:
+        fq_delay_p = subprocess.Popen(["./fq_endeq.bt"],
+                                  stdout=fq_delay_f, cwd=os.path.join(swd, '../bpftraces'))
+    instrument_files.append(fq_delay_f)
+    instrument_procs.append(fq_delay_p)
+
+    if args.no_instrument:
+        return (instrument_files, instrument_procs)
+     
     # CPU load
     cpuload_f = tempfile.NamedTemporaryFile()
     cpuload_p = subprocess.Popen(['./cpuload.sh'], stdout=cpuload_f, cwd=swd)
@@ -396,21 +472,16 @@ def start_instruments(interface):
     instrument_procs.append(cpuload_p)
 
     # xdp
-    with open(f'xdp.{experiment}.out', 'w') as brtt_f:
+    # with open(f'xdp.{experiment}.out', 'w') as brtt_f:
         # if int(args.container) > 0:
-        #     brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
-        #                               stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
+        #     brtt_p = subprocess.Popen(["./tcxdp", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
+        #                               stdout=brtt_f, cwd=os.path.join(swd, '../tcxdp'))
         # else:
-        #     brtt_p = subprocess.Popen(["./xdpts", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
-        #                               stdout=brtt_f, cwd=os.path.join(swd, '../xdpts'))
-        if int(args.container) > 0:
-            brtt_p = subprocess.Popen(["./tcxdp", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001", "-V"],
-                                      stdout=brtt_f, cwd=os.path.join(swd, '../tcxdp'))
-        else:
-            brtt_p = subprocess.Popen(["./tcxdp", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
-                                      stdout=brtt_f, cwd=os.path.join(swd, '../tcxdp'))
-    instrument_files.append(brtt_f)
-    instrument_procs.append(brtt_p)
+        #     brtt_p = subprocess.Popen(["./tcxdp", "-i", interface, "-I", "xdp", "-x", "native", "-r" "0.001"],
+        #                               stdout=brtt_f, cwd=os.path.join(swd, '../tcxdp'))
+        
+    # instrument_files.append(brtt_f)
+    # instrument_procs.append(brtt_p)
 
     # rack
     with open(f'rack.{experiment}.out', 'w') as trtt_rack_f:
@@ -419,16 +490,16 @@ def start_instruments(interface):
     instrument_files.append(trtt_rack_f)
     instrument_procs.append(trtt_rack_p)
 
-    # fq
-    with open(f'fq.{experiment}.out', 'w') as fq_delay_f:
-        fq_delay_p = subprocess.Popen(["./fq.bt"],
-                                  stdout=fq_delay_f, cwd=os.path.join(swd, '../bpftraces'))
-    instrument_files.append(fq_delay_f)
-    instrument_procs.append(fq_delay_p)
+    # # fq
+    # with open(f'fq.{experiment}.out', 'w') as fq_delay_f:
+    #     fq_delay_p = subprocess.Popen(["./fq.bt"],
+    #                               stdout=fq_delay_f, cwd=os.path.join(swd, '../bpftraces'))
+    # instrument_files.append(fq_delay_f)
+    # instrument_procs.append(fq_delay_p)
     
     # sock
     with open(f'sock.{experiment}.out', 'w') as sock_f:
-        sock_p = subprocess.Popen(["./sock.bt"],
+        sock_p = subprocess.Popen(["./sock-ihreo.bt"],
                                   stdout=sock_f, cwd=os.path.join(swd, '../bpftraces'))
     instrument_files.append(sock_f)
     instrument_procs.append(sock_p)
@@ -444,25 +515,15 @@ def start_instruments(interface):
 
     return (instrument_files, instrument_procs)
 
-def start_sock_instrument(interface):
-    instrument_files = []
-    instrument_procs =[]
-
-    # sock
-    with open(f'sock.{experiment}.out', 'w') as sock_f:
-        sock_p = subprocess.Popen(["./sock.bt"],
-                                  stdout=sock_f, cwd=os.path.join(swd, '../bpftraces'))
-    instrument_files.append(sock_f)
-    instrument_procs.append(sock_p)
-
-    return (instrument_files, instrument_procs)
-
 def end_instruments(instrument_files, instruments_procs):
     for proc in instruments_procs:
         proc.kill()
 
+    if args.no_instrument:
+        return
+    
     with open(f'cpu.{experiment}.out', 'w') as cpu_output:
-        subprocess.Popen(["./cpu.py", instrument_files[0].name], stdout=cpu_output, cwd=swd).communicate()
+        subprocess.Popen(["./cpu.py", instrument_files[2].name], stdout=cpu_output, cwd=swd).communicate()
 
 def get_k8s_nodes():
     first = ['kubectl', 'get', 'nodes']
@@ -518,8 +579,12 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         port = 5200 + i
         cport = 45000 + i
         cpu = 16 + i
+        # Host to host
         iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), \
                       "-t", str(duration), "-J", "-A", str(cpu)]
+        # Host to containers in another host
+        # iperf_args = ["iperf3", "-c", server_pods[i][1], "-p", str(port), "--cport", str(cport), \
+        #               "-t", str(duration), "-J", "-A", str(cpu)]
         f = open(f'iperf.h{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(iperf_args, stdout=f, stderr=subprocess.PIPE, cwd='../../scripts')
         
@@ -533,9 +598,11 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         port = 5200 + i
         cport = 45000 + i
         cpu = 16 + i
+        # Container to containers
         iperf_args = ["kubectl", "exec", client_pods[i][0], "--", \
                       "iperf3", "-c", server_pods[i][1], "-p", str(port), "--cport", str(cport), \
                       "-t", str(duration), "-J", "-A", str(cpu)]
+        # Container to host
         # iperf_args = ["kubectl", "exec", client_pods[i][0], "--", \
         #               "iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), \
         #               "-t", str(duration), "-J", "-A", str(cpu)]
@@ -549,8 +616,8 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         cflow.dport = port
         cflows.append(cflow)
 
-    logging.info(f"Start {num_hflows} iperf host flows for {duration} seconds.")
-    logging.info(f"Start {num_cflows} iperf container flows for {duration} seconds.")
+    logging.debug(f"Start {num_hflows} iperf host flows for {duration} seconds.")
+    logging.debug(f"Start {num_cflows} iperf container flows for {duration} seconds.")
     for (p, f, is_cflow) in processes:
         _, err = p.communicate()
         if err != None and err != b'':
@@ -559,6 +626,10 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         
         f.seek(0)
         data = json.load(f)
+        if len(data["start"]["connected"]) == 0:
+            f.close()
+            continue
+
         dport = data["start"]["connected"][0]["remote_port"]
         if is_cflow:
             i, flow = find_flow(cflows, dport)
@@ -656,6 +727,35 @@ def run_neper_clients(num_hflows, num_cflows, duration, server_addr, server_pods
 
     return hflows, cflows
 
+def check_mark():
+    with open(f'rack.{experiment}.out', 'r') as f:
+        marks = {}
+        lines = f.readlines()
+        for l in lines:
+            tokens = l.split()
+            if len(tokens) < 5:
+                continue
+
+            if tokens[1] == 'tcp_ack()':
+                mark = tokens[4]
+                if not mark in marks:
+                    marks[mark] = 1
+                else:
+                    marks[mark] += 1
+        
+        print('[mark statitics]')
+        for mark in marks:
+            print(f'{mark}: {marks[mark]}')
+
+def calculate_rho(experiment):
+    path = os.path.join(swd, "..", "output", experiment, f"rho.{experiment}.out")
+    stdout, _ = subprocess.Popen(["./rho.py", path], stdout=subprocess.PIPE, cwd=swd).communicate()
+    print(f" {stdout.decode()}")
+
+def count_inversion(experiment):
+    stdout, _ = subprocess.Popen(["./inversion2.py", experiment], stdout=subprocess.PIPE, cwd=swd).communicate()
+    print(f" {stdout.decode()}")
+
 def find_flow(flows, dport):
     for i, flow in enumerate(flows):
         if flow.dport == dport:
@@ -675,13 +775,14 @@ if __name__ == "__main__":
     parser.add_argument('--host', '-f', default=1)
     parser.add_argument('--container', '-c', default=0)
     parser.add_argument('--time', '-t', default=10)
+    parser.add_argument('--cvalue', '-C', default=-1)
     parser.add_argument('--app', '-a', default='iperf')
-    parser.add_argument('--log', '-l', default="warning")
+    parser.add_argument('--log', '-l', default="info")
     parser.add_argument('--cca', default='bbr')
     parser.add_argument('--loss-detection', default='rack-tlp')
     parser.add_argument('--no-instrument', action='store_true')
-    parser.add_argument('--sock-only', action='store_true')
     parser.add_argument('--instrument-only', action='store_true')
+    parser.add_argument('--loss', '-L', default=0)
 
     global args
     args = parser.parse_args()
@@ -720,3 +821,10 @@ if __name__ == "__main__":
         exit()
 
     main()
+
+    # Check mark
+    # check_mark()
+
+    # calculate_rho(experiment)
+
+    count_inversion(experiment)
