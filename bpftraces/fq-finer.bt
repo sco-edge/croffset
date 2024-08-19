@@ -1,0 +1,87 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/tcp.h>
+
+kprobe:fq_enqueue
+{
+	$skb = (struct sk_buff *)arg0;
+	$sk = (struct sock *)$skb->sk;
+	$skb_mstamp_ns = $skb->skb_mstamp_ns;
+	printf("%lld fq_enqueue() 0x%llx 0x%llx %d %llu\n",
+		nsecs,
+		$sk, $skb, cpu, $skb_mstamp_ns);
+	@start[arg0] = nsecs;
+}
+
+kretprobe:fq_dequeue
+/@start[retval]/
+{
+	$skb = (struct sk_buff *)retval;
+	$sk = (struct sock *)$skb->sk;
+	$skb_mstamp_ns = $skb->skb_mstamp_ns;
+	$delay = nsecs - @start[retval];
+	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu %llu %d %d\n",
+		   nsecs,
+		   $sk, $skb, cpu, $skb_mstamp_ns,
+		   $delay, $sk->sk_protocol, $skb->ooo_okay);
+	delete(@start[retval]);
+}
+
+kprobe:__ip_queue_xmit
+{
+	$sk = (struct sock *)arg0;
+	$port = $sk->__sk_common.skc_num;
+
+    if ($port != 22 && $port != 6443) {
+        $skb = (struct sk_buff *)arg1;
+        $cb = (struct tcp_skb_cb *)$skb->cb;
+        $tcp_gso_segs = $cb->tcp_gso_segs;
+        $skb_mstamp_ns = $skb->skb_mstamp_ns;
+
+        printf("%lld __ip_queue_xmit() 0x%llx 0x%llx %d %d %llu %d\n",
+            nsecs,
+            arg0, arg1, $port, $tcp_gso_segs,
+            $skb_mstamp_ns, cpu);
+    }
+}
+
+//kprobe:tcp_tsq_write
+//{
+//	printf("%lld tcp_tsq_write() 0x%llx %d\n",
+//		   nsecs,
+//		   arg0, cpu);
+//}
+
+kprobe:tcp_sendmsg_locked
+{
+	printf("%lld tcp_sendmsg_locked() 0x%llx %d\n",
+		nsecs,
+		arg0, cpu);
+}
+
+kprobe:release_sock
+{
+	printf("%lld release_sock() 0x%llx %d\n",
+		nsecs,
+		arg0, cpu);
+}
+
+//kprobe:do_idle
+//{
+//	printf("%lld do_idle() %d\n",
+//		nsecs,
+//		cpu);
+//}
+
+kprobe:irq_exit_rcu
+{
+	printf("%lld irq_exit_rcu() %d\n",
+		nsecs,
+		cpu);
+}
+
+END
+{
+	clear(@start);
+}

@@ -1,0 +1,102 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/tcp.h>
+
+kprobe:fq_enqueue
+{
+	$skb = (struct sk_buff *)arg0;
+	$sk = (struct sock *)$skb->sk;
+	$skb_mstamp_ns = $skb->skb_mstamp_ns;
+	printf("%lld %d fq_enqueue() 0x%llx 0x%llx %d %llu   %d\n",
+		nsecs, cpu,
+		$sk, $skb, cpu, $skb_mstamp_ns,
+		$skb->len);
+}
+
+kretprobe:fq_enqueue
+/retval/
+{
+	printf("%lld %d fq_enqueue() returns %d %d\n",
+		   nsecs, cpu,
+		   retval, cpu);
+}
+
+kretprobe:fq_dequeue
+/retval/
+{
+	$skb = (struct sk_buff *)retval;
+	$sk = (struct sock *)$skb->sk;
+	$skb_mstamp_ns = $skb->skb_mstamp_ns;	
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$gso_segs = $cb->tcp_gso_segs;
+	printf("%lld %d fq_dequeue() 0x%llx 0x%llx %d %llu   %d %d\n",
+		   nsecs, cpu,
+		   $sk, $skb, cpu, $skb_mstamp_ns,
+		   $skb->len, $gso_segs);
+}
+
+kprobe:__ip_queue_xmit
+{
+	$sk = (struct sock *)arg0;
+	$port = $sk->__sk_common.skc_num;
+
+    if ($port != 22 && $port != 6443) {
+        $skb = (struct sk_buff *)arg1;
+        $cb = (struct tcp_skb_cb *)$skb->cb;
+        $tcp_gso_segs = $cb->tcp_gso_segs;
+        $skb_mstamp_ns = $skb->skb_mstamp_ns;
+		$cb = (struct tcp_skb_cb *)$skb->cb;
+		$gso_segs = $cb->tcp_gso_segs;
+
+        printf("%lld %d __ip_queue_xmit() 0x%llx 0x%llx %d %d %llu %d\n",
+            nsecs, cpu,
+            arg0, arg1, $port, $tcp_gso_segs,
+            $skb_mstamp_ns, $gso_segs);
+    }
+}
+
+kprobe:tcp_v4_do_rcv
+{
+	printf("%lld %d tcp_v4_do_rcv() 0x%llx 0x%llx\n",
+            nsecs, cpu, 
+            arg0, arg1);
+}
+
+kprobe:run_ksoftirqd
+{
+	printf("%lld %d run_ksoftirqd()\n",
+            nsecs, cpu);
+}
+
+//kprobe:irq_exit_rcu
+//{
+//	printf("%lld %d irq_exit_rcu()\n",
+//            nsecs, cpu);
+//}
+
+kprobe:tcp_sendmsg
+{
+	printf("%lld %d tcp_sendmsg() 0x%llx\n",
+            nsecs, cpu,
+			arg0);
+}
+
+kprobe:gro_cell_poll
+{
+	printf("%lld %d gro_cell_poll()\n",
+            nsecs, cpu);
+}
+
+kprobe:process_backlog
+{
+	printf("%lld %d process_backlog()\n",
+            nsecs, cpu);
+}
+
+kprobe:tcp_add_backlog
+{
+	printf("%lld %d tcp_add_backlog() 0x%llx 0x%llx\n",
+            nsecs, cpu,
+			arg0, arg1);
+}

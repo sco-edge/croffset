@@ -1,0 +1,21 @@
+#!/usr/local/bin/bpftrace
+
+#include <net/sock.h>
+#include <net/inet_connection_sock.h>
+#include <linux/win_minmax.h>
+#include <net/tcp.h>
+
+kprobe:__tcp_transmit_skb
+{
+	$sk = (struct sock *)arg0;
+	$port = $sk->__sk_common.skc_num;
+	$skb = (struct sk_buff *)arg1;
+	$cb = (struct tcp_skb_cb *)$skb->cb;
+	$tcp_gso_segs = $cb->tcp_gso_segs;
+	$skb_mstamp_ns = $skb->skb_mstamp_ns;
+
+	printf("%lld __tcp_transmit_skb() 0x%llx 0x%llx %d %d %llu\n",
+		   nsecs,
+		   arg0, arg1, $port, $tcp_gso_segs,
+		   $skb_mstamp_ns);
+}
