@@ -119,7 +119,7 @@ static int parse_arguments(int argc, char *argv[], struct ihreo_config *config)
 			break;
 		case 'c':
 			err = parse_bounded_long(&user_int, optarg, 0,
-						   1000,
+						   2000000,
 						   "cvalue");
 			if (err)
 				return -EINVAL;
