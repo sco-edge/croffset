@@ -8,9 +8,10 @@ kprobe:fq_enqueue
 	$skb = (struct sk_buff *)arg0;
 	$sk = (struct sock *)$skb->sk;
 	$skb_mstamp_ns = $skb->skb_mstamp_ns;
-	printf("%lld fq_enqueue() 0x%llx 0x%llx %d %llu %d\n",
+	printf("%lld fq_enqueue() 0x%llx 0x%llx %d %llu   %d\n",
 		nsecs,
-		$sk, $skb, cpu, $skb_mstamp_ns, $skb->len);
+		$sk, $skb, cpu, $skb_mstamp_ns,
+		$skb->len);
 }
 
 kretprobe:fq_enqueue
@@ -27,7 +28,7 @@ kretprobe:fq_dequeue
 	$skb = (struct sk_buff *)retval;
 	$sk = (struct sock *)$skb->sk;
 	$skb_mstamp_ns = $skb->skb_mstamp_ns;	
-	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu %d %d\n",
+	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu   %d %d\n",
 		   nsecs,
 		   $sk, $skb, cpu, $skb_mstamp_ns,
 		   $skb->len, $skb->truesize);

@@ -140,6 +140,16 @@ kprobe:tcp_clean_rtx_queue.constprop.0
 		   $sk, $skb, $prior_fack, $prior_snd_una);
 }
 
+kprobe:tcp_sacktag_write_queue
+{
+	$ack_skb = (struct sk_buff *)arg1;
+	$mark = $ack_skb->mark;
+
+	printf("%lld tcp_sacktag_write_queue() 0x%llx 0x%llx %0xd\n",
+		   nsecs,
+		   arg0, arg1, $mark);
+}
+
 kprobe:tcp_sacktag_walk
 /@delivery_flag/
 {
