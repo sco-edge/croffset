@@ -1,0 +1,10 @@
+---
+devices: "ens801f0"
+kubeProxyReplacement: true
+bpf:
+  masquerade: true
+  hostLegacyRouting: false
+bandwidthManager:
+  enabled: true
+  bbr: true
+...

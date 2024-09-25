@@ -1,0 +1,13 @@
+---
+devices: "ens801f0"
+routingMode: "native"
+ipv4NativeRoutingCIDR: "192.168.2.0/24"
+kubeProxyReplacement: true
+autoDirectNodeRoutes: true
+bpf:
+  masquerade: true
+  hostLegacyRouting: false
+bandwidthManager:
+  enabled: true
+  bbr: true
+...
