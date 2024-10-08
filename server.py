@@ -254,9 +254,9 @@ def main():
     host_sr = read_sr(cflows)
 
     if not args.instrument_only:
-        if len(hflows) != int(args.host) or len(cflows) != int(args.container):
-            print(f'Inconsistent # flow. hflows={len(hflows)}, cflows={len(cflows)}')
-            exit(-1)
+        # if len(hflows) != int(args.host) or len(cflows) != int(args.container):
+        #     print(f'Inconsistent # flow. hflows={len(hflows)}, cflows={len(cflows)}')
+        #     exit(-1)
 
         summarize_statistics(hflows, cflows, host_sr)
     
@@ -387,7 +387,7 @@ def end_system_measurements(h_meas_starts, cs_meas_starts, cc_meas_starts, num_c
         with open(f'interrupts.cc{i}.{experiment}.out', 'w') as cc_interrupts_output:
             subprocess.Popen(["./interrupts.py", cc_meas_starts[i][0].name, end_cc_interrupts_f.name],
                             stdout=cc_interrupts_output, cwd=swd).communicate()
-            
+        
         end_cc_softirqs_f = tempfile.NamedTemporaryFile()
         subprocess.run(["kubectl", "exec", client_pods[i][0], "--", \
                     "cat", "/proc/softirqs"], stdout=end_cc_softirqs_f)
@@ -436,17 +436,32 @@ def start_instruments(interface):
     # Compensation
     if int(args.cvalue) == -1:
         cvalue_p = subprocess.Popen(["./ihreo", "-i", interface], stdout=subprocess.DEVNULL, cwd=os.path.join(swd, '../clean-slate/croffset'))
-    else:
+        instrument_procs.append(cvalue_p)
+    elif int(args.cvalue) != 0:
         # cvalue_p = subprocess.Popen(["./ihreo", "-i", interface, "-c", args.cvalue], stdout=subprocess.DEVNULL, cwd=os.path.join(swd, '../clean-slate/croffset'))
         cvalue_p = subprocess.Popen(["./ihreo", "-i", interface, "-c", args.cvalue], stdout=subprocess.DEVNULL, cwd=os.path.join(swd, '../clean-slate/croffset'))
-    instrument_procs.append(cvalue_p)
+        instrument_procs.append(cvalue_p)
     
-    # track_cpu
-    with open(f'track.{experiment}.out', 'w') as track_f:
-        track_p = subprocess.Popen(["./track.bt"],
-                                  stdout=track_f, cwd=os.path.join(swd, '../bpftraces'))
-    instrument_files.append(track_f)
-    instrument_procs.append(track_p)
+    # gadget
+    with open(f'gadget.{experiment}.out', 'w') as gadget_f:
+        gadget_p = subprocess.Popen(["kubectl", "gadget", "top", "ebpf", "-o", "columns=comm,name,totalcpu,runtime,mapmemory", "-F", "comm:ihreo"],
+                                  stdout=gadget_f, cwd=os.path.join(swd))
+    instrument_files.append(gadget_f)
+    instrument_procs.append(gadget_p)
+
+    # mpstat
+    with open(f'mpstat.{experiment}.out', 'w') as mpstat_f:
+        mpstat_p = subprocess.Popen(["mpstat", "1"],
+                                  stdout=mpstat_f, cwd=os.path.join(swd))
+    instrument_files.append(mpstat_f)
+    instrument_procs.append(mpstat_p)
+
+    # # track_cpu
+    # with open(f'track.{experiment}.out', 'w') as track_f:
+    #     track_p = subprocess.Popen(["./track.bt"],
+    #                               stdout=track_f, cwd=os.path.join(swd, '../bpftraces'))
+    # instrument_files.append(track_f)
+    # instrument_procs.append(track_p)
 
     # # rho
     # with open(f'rho.{experiment}.out', 'w') as rho_f:
@@ -455,12 +470,12 @@ def start_instruments(interface):
     # instrument_files.append(rho_f)
     # instrument_procs.append(rho_p)
 
-    # fq
-    with open(f'fqd.{experiment}.out', 'w') as fq_delay_f:
-        fq_delay_p = subprocess.Popen(["./fq_endeq.bt"],
-                                  stdout=fq_delay_f, cwd=os.path.join(swd, '../bpftraces'))
-    instrument_files.append(fq_delay_f)
-    instrument_procs.append(fq_delay_p)
+    # # fq
+    # with open(f'fqd.{experiment}.out', 'w') as fq_delay_f:
+    #     fq_delay_p = subprocess.Popen(["./fq_endeq.bt"],
+    #                               stdout=fq_delay_f, cwd=os.path.join(swd, '../bpftraces'))
+    # instrument_files.append(fq_delay_f)
+    # instrument_procs.append(fq_delay_p)
 
     if args.no_instrument:
         return (instrument_files, instrument_procs)
@@ -577,7 +592,7 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
     # Host flows
     for i in range(0, num_hflows):
         port = 5200 + i
-        cport = 45000 + i
+        cport = 46000 + i
         cpu = 16 + i
         # Host to host
         iperf_args = ["iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), \
@@ -600,8 +615,8 @@ def run_iperf_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         cpu = 16 + i
         # Container to containers
         iperf_args = ["kubectl", "exec", client_pods[i][0], "--", \
-                      "iperf3", "-c", server_pods[i][1], "-p", str(port), "--cport", str(cport), \
-                      "-t", str(duration), "-J", "-A", str(cpu)]
+                    "iperf3", "-c", server_pods[i][1], "-p", str(port), "--cport", str(cport), \
+                    "-t", str(duration), "-J", "-A", str(cpu)]
         # Container to host
         # iperf_args = ["kubectl", "exec", client_pods[i][0], "--", \
         #               "iperf3", "-c", server_addr, "-p", str(port), "--cport", str(cport), \
@@ -661,7 +676,7 @@ def run_neper_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         cport = 45000 + i
         cpu = 16 + i
         neper_args = ["numactl", "-C", str(cpu), "./tcp_rr", "--nolog", "-c", "-H", server_addr, \
-                      "-l", str(duration), "--source-port", str(cport), "-P", str(port)]
+                      "-l", str(duration), "--source-port", str(cport), "-P", str(port), "--num-clients", "10000"]
         f = open(f'neper.h{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE, cwd=swd)
         
@@ -682,6 +697,9 @@ def run_neper_clients(num_hflows, num_cflows, duration, server_addr, server_pods
         neper_args = ["kubectl", "exec", client_pods[i][0], "--", "numactl", "-C", str(cpu), \
                       "./tcp_rr", "--nolog", "-c", "-H", server_pods[i][1], "-l", str(duration), \
                       "--source-port", str(cport), "-P", str(port)]
+        # neper_args = ["kubectl", "exec", client_pods[i][0], "--", "numactl", "-C", str(cpu), \
+        #               "./tcp_stream", "--nolog", "-c", "-H", server_pods[i][1], "-l", str(duration), \
+        #               "--source-port", str(cport), "-P", str(port)]
         f = open(f'neper.c{i}.{experiment}.out', 'w+b')
         p = subprocess.Popen(neper_args, stdout=f, stderr=subprocess.PIPE)
 
@@ -796,7 +814,7 @@ if __name__ == "__main__":
         print(f"{args.app} is not an available app. Available: {', '.join(available_apps)}")
         exit()
 
-    available_ccas = ["bbr", "cubic"]
+    available_ccas = ["bbr", "cubic", "reno"]
     if args.cca not in available_ccas:
         print(f"{args.cca} is not an available cca. Available: {', '.join(available_ccas)}")
         exit()
@@ -827,4 +845,7 @@ if __name__ == "__main__":
 
     # calculate_rho(experiment)
 
-    count_inversion(experiment)
+    # count_inversion(experiment)
+
+    stdout, _ = subprocess.Popen(["./gen-stat-mpstat.py", experiment], stdout=subprocess.PIPE, cwd=os.path.join(swd, '..')).communicate()
+    print(f" {stdout.decode()}")

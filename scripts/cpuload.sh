@@ -1,6 +1,6 @@
 #!/bin/bash
 
-interval=0.1; ##loop interval in seconds
+interval=1; ##loop interval in seconds
 
 ##so settings below
 lCpus=(); ##store last readings
