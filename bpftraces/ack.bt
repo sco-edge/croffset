@@ -16,3 +16,14 @@ kprobe:tcp_ack
 		   nsecs,
 		   arg1, $mark);
 }
+
+kprobe:tcp_rack_advance
+{
+	$tp = (struct tcp_sock *)arg0;
+	$tsval = $tp->rx_opt.rcv_tsval;
+	$tsecr = $tp->rx_opt.rcv_tsecr;
+
+	printf("%lld tcp_rack_advance() %llx %llx\n",
+		  nsecs, $tsval, $tsecr);
+}
+

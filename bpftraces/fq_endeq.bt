@@ -20,8 +20,22 @@ kretprobe:fq_dequeue
 	$skb = (struct sk_buff *)retval;
 	$sk = (struct sock *)$skb->sk;
 	$skb_mstamp_ns = $skb->skb_mstamp_ns;	
-	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu   %d %d\n",
+	printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu   %d %d %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
 		   nsecs,
 		   $sk, $skb, cpu, $skb_mstamp_ns,
-		   $skb->len, $skb->truesize);
+		   $skb->len, $skb->truesize, $skb->data[0], $skb->data[1], $skb->data[2], $skb->data[3], $skb->data[4], $skb->data[5], $skb->data[6], $skb->data[7], $skb->data[8], $skb->data[9], $skb->data[10], $skb->data[11]);
+	//printf("2 %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+	//	   $skb->data[12], $skb->data[13], $skb->data[14], $skb->data[15], $skb->data[16], $skb->data[17], $skb->data[18], $skb->data[19], $skb->data[20], $skb->data[21], $skb->data[22], $skb->data[23]);
+	//printf("3 %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+	//	   $skb->data[24], $skb->data[25], $skb->data[26], $skb->data[27], $skb->data[28], $skb->data[29], $skb->data[30], $skb->data[31], $skb->data[32], $skb->data[33], $skb->data[34], $skb->data[35]);
+	//printf("4 %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+	//	   $skb->data[36], $skb->data[37], $skb->data[38], $skb->data[39], $skb->data[40], $skb->data[41], $skb->data[42], $skb->data[43], $skb->data[44], $skb->data[45], $skb->data[46], $skb->data[47]);
+	//printf("%lld fq_dequeue() 0x%llx 0x%llx %d %llu   %d %d %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+	//	   nsecs,
+	//	   $sk, $skb, cpu, $skb_mstamp_ns,
+	//	   $skb->len, $skb->truesize, $skb->data[26], $skb->data[27], $skb->data[28], $skb->data[29], $skb->data[30], $skb->data[31], $skb->data[32], $skb->data[33], $skb->data[34], $skb->data[35], $skb->data[36], $skb->data[37]);
+	//printf("%llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+	//		$skb->data[76], $skb->data[77], $skb->data[78], $skb->data[79], $skb->data[80], $skb->data[81], $skb->data[82], $skb->data[83], $skb->data[84], $skb->data[85], $skb->data[86], $skb->data[87], $skb->data[0]);
+	//printf("%llx %llx %llx %llx\n", $skb->data[0], $skb->data[1], $skb->data[2], $skb->data[3]);
+
 }
