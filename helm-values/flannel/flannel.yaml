@@ -1,0 +1,8 @@
+---
+podCidr: "10.244.0.0/16"
+flannel:
+  args:
+  - "--ip-masq"
+  - "--kube-subnet-mgr"
+  - "--iface=ens801f0"
+...
