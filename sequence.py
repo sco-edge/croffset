@@ -80,8 +80,8 @@ def ooo_queuing(experiment):
                             qi_per_flow[sk].append(dequeue_qi)
                         else:
                             qi_per_flow[sk] = [enqueue_qi, dequeue_qi]
-                    else:
-                        print("Not enqueued but dequeued:", l)
+                    # else:
+                    #     print("Not enqueued but dequeued:", l)
 
     for sk in qi_per_flow:
         if len(qi_per_flow[sk]) < 1000:
@@ -100,7 +100,6 @@ def ooo_queuing(experiment):
                 continue
 
             if last_dequeue.edt > qi.edt:
-                # print(f"{last_dequeue.edt} {qi.edt} marked")
                 last_dequeue.mark_ooo()
 
             last_dequeue = qi
@@ -109,18 +108,18 @@ def ooo_queuing(experiment):
         for qi in qi_per_flow[sk]:
             if not qi.is_dequeue:
                 ql.enqueue(qi)
-                print(f"E {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()}")
+                # print(f"E {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()}")
             else:
                 res = ql.dequeue(qi)
                 if res >= 0:
                     ooo += 1
                     if res == 0:
                         looo += 1
-                    print(f"D {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()} R{res}")
-                else:
-                    print(f"D {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()}")
+                        print(f"D {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()} R{res}")
+                # else:
+                #     print(f"D {qi.ts} {qi.skb} {qi.edt} {qi.cpu} {ql.length()}")
 
-        print(f"sk: {sk} OOO: {ooo} OOO-Legal: {looo}")
+        print(f"{sk} Len: {len(qi_per_flow[sk])} Legal-OOO: {looo} Illegal-OOO: {ooo - looo}")
 
 def dequeue_ordering(experiment):
     count = 0
@@ -145,7 +144,7 @@ def dequeue_ordering(experiment):
             if method == "fq_dequeue()":
                 if sk in last_dequeue_edt_per_flow:
                     if edt < last_dequeue_edt_per_flow[sk][0]:
-                        # print(last_dequeue_edt_per_flow[sk][0], last_dequeue_edt_per_flow[sk][1], l, end="")
+                        print(last_dequeue_edt_per_flow[sk][0], last_dequeue_edt_per_flow[sk][1], l, end="")
                         count += 1
                 last_dequeue_edt_per_flow[sk] = (edt, cpu)
     print("out-of-order dequeue:", count)
@@ -241,6 +240,77 @@ def check_ih_queuing(experiment):
                         ihq_list.append(ih_queuing)
     print(len(ihq_list), np.mean(ihq_list))
 
+def check_lateness(experiment):
+    enqueue_count = 0
+    dequeue_count = 0
+    enqueue_lateness = []
+    dequeue_lateness = []
+    with open(f"fq.{experiment}.out", "r") as file:    
+        lines = file.readlines()
+        for l in lines:
+            tokens = l.split()
+            if len(tokens) < 6:
+                continue
+            
+            ts = int(tokens[0])
+            method = tokens[1]
+            if method == "__ip_queue_xmit()":
+                continue
+            
+            sk = tokens[2]
+            skb = tokens[3]
+            cpu = tokens[4]
+            edt = int(tokens[5])
+
+            if method == "fq_enqueue()":
+                enqueue_count += 1
+            elif method == "fq_dequeue()":
+                dequeue_count += 1
+
+            if ts > edt:
+                if abs(ts - edt) > 100000:
+                    continue
+                # print(f"{method}: {edt - ts}")
+                if method == "fq_enqueue()":
+                    enqueue_lateness.append(edt - ts)
+                elif method == "fq_dequeue()":
+                    dequeue_lateness.append(edt - ts)
+
+    print(f"enqueue: {enqueue_count} lateness: {len(enqueue_lateness)} {len(enqueue_lateness) / enqueue_count * 100 :.2f} {np.mean(enqueue_lateness):.0f}")
+    print(f"dequeue: {dequeue_count} lateness: {len(dequeue_lateness)} {len(dequeue_lateness) / dequeue_count * 100 :.2f} {np.mean(dequeue_lateness):.0f}")
+
+def check_lateness_track(experiment):
+    enqueue_count = 0
+    enqueue_lateness = []
+    with open(f"track.{experiment}.out", "r") as file:    
+        lines = file.readlines()
+        for l in lines:
+            tokens = l.split()
+            if len(tokens) < 6:
+                continue
+            
+            ts = int(tokens[0])
+            cpu = int(tokens[1])
+            method = tokens[2]
+
+            if not method == "fq_enqueue()":
+                continue
+            
+            enqueue_count += 1
+            sk = tokens[3]
+            skb = tokens[4]
+            cpu = tokens[5]
+            edt = int(tokens[6])
+
+            if ts > edt:
+                if abs(ts - edt) > 100000:
+                    continue
+                enqueue_lateness.append(edt - ts)
+                print(l)
+
+    print(f"enqueue: {enqueue_count} lateness: {len(enqueue_lateness)} {len(enqueue_lateness) / enqueue_count * 100 :.2f} {np.mean(enqueue_lateness):.0f}")
+
+
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
     argparser.add_argument('experiment')
@@ -254,8 +324,12 @@ if __name__ == "__main__":
     os.chdir(os.path.join(swd, args.path, args.experiment))
 
     # Main logic
-    ooo_queuing(args.experiment)
+    # ooo_queuing(args.experiment)
     
+    # dequeue_ordering(args.experiment)
+
     # analyze_per_cpu(args.experiment)
 
     # check_ih_queuing(args.experiment)
+
+    check_lateness_track(args.experiment)
